@@ -16,11 +16,10 @@ services:
         #     - ./pgdata:/var/lib/postgresql/data/pgdata
 
     webserver:
-        image: zdp-airflow:zmaster
+        image: zdp-airflow:1.10.10
         depends_on:
             - postgres
             - redis
-            - initdb
         environment:
             - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
             - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres:5432/airflow
@@ -29,7 +28,7 @@ services:
             - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
             - AIRFLOW__CORE__LOAD_EXAMPLES=False
         volumes:
-            - ./dags:/home/airflow/airflow/dags
+            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
         ports:
             - "8080:8080"
@@ -41,12 +40,12 @@ services:
             retries: 3
 
     initdb:
-        image: zdp-airflow:zmaster
+        image: zdp-airflow:1.10.10
         depends_on:
             - postgres
             - redis
         volumes:
-            - ./dags:/home/airflow/airflow/dags
+            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
@@ -58,8 +57,26 @@ services:
             - AIRFLOW__CORE__LOAD_EXAMPLES=False
         command: initdb
 
+    upgradedb:
+      image: zdp-airflow:1.10.10
+      depends_on:
+        - postgres
+        - redis
+      volumes:
+        - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
+        # Uncomment to include custom plugins
+        # - ./plugins:/usr/local/airflow/plugins
+      environment:
+        - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+        - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres:5432/airflow
+        - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/1
+        - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+        - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+        - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      command: upgradedb
+
     flower:
-        image: zdp-airflow:zmaster
+        image: zdp-airflow:1.10.10
         restart: always
         depends_on:
             - redis
@@ -75,12 +92,12 @@ services:
         command: flower
 
     scheduler:
-        image: zdp-airflow:zmaster
+        image: zdp-airflow:1.10.10
         restart: always
         depends_on:
             - webserver
         volumes:
-            - ./dags:/home/airflow/airflow/dags
+            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
@@ -93,12 +110,12 @@ services:
         command: scheduler -r 30
 
     worker:
-        image: zdp-airflow:zmaster
+        image: zdp-airflow:1.10.10
         restart: always
         depends_on:
             - scheduler
         volumes:
-            - ./dags:/home/airflow/airflow/dags
+            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
