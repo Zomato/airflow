@@ -22,11 +22,10 @@ import json
 import unittest
 from six.moves.urllib.parse import quote_plus
 
-from airflow import configuration
 from airflow.api.common.experimental.trigger_dag import trigger_dag
 from airflow.models import DagBag, DagModel, DagRun, Pool, TaskInstance
 from airflow.settings import Session
-from airflow.utils.timezone import datetime, utcnow
+from airflow.utils.timezone import datetime, utcnow, parse as parse_datetime
 from airflow.www import app as application
 from tests.test_utils.db import clear_db_pools
 
@@ -48,7 +47,6 @@ class TestApiExperimental(unittest.TestCase):
 
     def setUp(self):
         super(TestApiExperimental, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         self.app = app.test_client()
 
@@ -96,33 +94,54 @@ class TestApiExperimental(unittest.TestCase):
         )
         self.assertEqual(404, response.status_code)
 
-    def test_task_paused(self):
-        url_template = '/api/experimental/dags/{}/paused/{}'
+    def test_dag_paused(self):
+        pause_url_template = '/api/experimental/dags/{}/paused/{}'
+        paused_url_template = '/api/experimental/dags/{}/paused'
+        paused_url = paused_url_template.format('example_bash_operator')
 
         response = self.app.get(
-            url_template.format('example_bash_operator', 'true')
+            pause_url_template.format('example_bash_operator', 'true')
         )
         self.assertIn('ok', response.data.decode('utf-8'))
         self.assertEqual(200, response.status_code)
 
-        url_template = '/api/experimental/dags/{}/paused/{}'
+        paused_response = self.app.get(paused_url)
+
+        self.assertEqual(200, paused_response.status_code)
+        self.assertEqual({"is_paused": True}, paused_response.json)
 
         response = self.app.get(
-            url_template.format('example_bash_operator', 'false')
+            pause_url_template.format('example_bash_operator', 'false')
         )
         self.assertIn('ok', response.data.decode('utf-8'))
         self.assertEqual(200, response.status_code)
+
+        paused_response = self.app.get(paused_url)
+
+        self.assertEqual(200, paused_response.status_code)
+        self.assertEqual({"is_paused": False}, paused_response.json)
 
     def test_trigger_dag(self):
         url_template = '/api/experimental/dags/{}/dag_runs'
+        run_id = 'my_run' + utcnow().isoformat()
         response = self.app.post(
             url_template.format('example_bash_operator'),
-            data=json.dumps({'run_id': 'my_run' + utcnow().isoformat()}),
+            data=json.dumps({'run_id': run_id}),
             content_type="application/json"
         )
 
         self.assertEqual(200, response.status_code)
+        response_execution_date = parse_datetime(json.loads(response.data.decode('utf-8'))['execution_date'])
+        self.assertEqual(0, response_execution_date.microsecond)
 
+        # Check execution_date is correct
+        response = json.loads(response.data.decode('utf-8'))
+        dagbag = DagBag()
+        dag = dagbag.get_dag('example_bash_operator')
+        dag_run = dag.get_dagrun(response_execution_date)
+        self.assertEqual(run_id, dag_run.run_id)
+
+        # Test error for nonexistent dag
         response = self.app.post(
             url_template.format('does_not_exist_dag'),
             data=json.dumps({}),
@@ -153,20 +172,17 @@ class TestApiExperimental(unittest.TestCase):
     def test_trigger_dag_for_date(self):
         url_template = '/api/experimental/dags/{}/dag_runs'
         dag_id = 'example_bash_operator'
-        hour_from_now = utcnow() + timedelta(hours=1)
-        execution_date = datetime(hour_from_now.year,
-                                  hour_from_now.month,
-                                  hour_from_now.day,
-                                  hour_from_now.hour)
+        execution_date = utcnow() + timedelta(hours=1)
         datetime_string = execution_date.isoformat()
 
-        # Test Correct execution
+        # Test correct execution with execution date
         response = self.app.post(
             url_template.format(dag_id),
             data=json.dumps({'execution_date': datetime_string}),
             content_type="application/json"
         )
         self.assertEqual(200, response.status_code)
+        self.assertEqual(datetime_string, json.loads(response.data.decode('utf-8'))['execution_date'])
 
         dagbag = DagBag()
         dag = dagbag.get_dag(dag_id)
@@ -175,10 +191,27 @@ class TestApiExperimental(unittest.TestCase):
                         'Dag Run not found for execution date {}'
                         .format(execution_date))
 
+        # Test correct execution with execution date and microseconds replaced
+        response = self.app.post(
+            url_template.format(dag_id),
+            data=json.dumps({'execution_date': datetime_string, 'replace_microseconds': 'true'}),
+            content_type="application/json"
+        )
+        self.assertEqual(200, response.status_code)
+        response_execution_date = parse_datetime(json.loads(response.data.decode('utf-8'))['execution_date'])
+        self.assertEqual(0, response_execution_date.microsecond)
+
+        dagbag = DagBag()
+        dag = dagbag.get_dag(dag_id)
+        dag_run = dag.get_dagrun(response_execution_date)
+        self.assertTrue(dag_run,
+                        'Dag Run not found for execution date {}'
+                        .format(execution_date))
+
         # Test error for nonexistent dag
         response = self.app.post(
             url_template.format('does_not_exist_dag'),
-            data=json.dumps({'execution_date': execution_date.isoformat()}),
+            data=json.dumps({'execution_date': datetime_string}),
             content_type="application/json"
         )
         self.assertEqual(404, response.status_code)
@@ -298,7 +331,6 @@ class TestPoolApiExperimental(unittest.TestCase):
 
     def setUp(self):
         super(TestPoolApiExperimental, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         self.app = app.test_client()
         self.session = Session()

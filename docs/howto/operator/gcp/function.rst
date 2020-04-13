@@ -24,6 +24,11 @@ Google Cloud Functions Operators
   :depth: 1
   :local:
 
+Prerequisite Tasks
+^^^^^^^^^^^^^^^^^^
+
+.. include:: _partials/prerequisite_tasks.rst
+
 .. _howto/operator:GcfFunctionDeleteOperator:
 
 GcfFunctionDeleteOperator
@@ -178,7 +183,7 @@ it means that your service account does not have the correct Cloud IAM permissio
 2. Grant the user the Cloud IAM Service Account User role on the Cloud Functions runtime
    service account.
 
-The typical way of assigning Cloud IAM permissions with `gcloud` is
+The typical way of assigning Cloud IAM permissions with ``gcloud`` is
 shown below. Just replace PROJECT_ID with ID of your Google Cloud Platform project
 and SERVICE_ACCOUNT_EMAIL with the email ID of your service account.
 
@@ -202,3 +207,12 @@ More information
 
 See Google Cloud API documentation `to create a function
 <https://cloud.google.com/functions/docs/reference/rest/v1/projects.locations.functions/create>`_.
+
+
+Reference
+---------
+
+For further information, look at:
+
+* `Google Cloud API Documentation <https://cloud.google.com/functions/docs/reference/rest/>`__
+* `Product Documentation <https://cloud.google.com/functions/docs/>`__

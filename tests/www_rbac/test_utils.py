@@ -20,11 +20,13 @@
 from datetime import datetime
 
 from bs4 import BeautifulSoup
-import mock
 import six
 from six.moves.urllib.parse import parse_qs
 
+from parameterized import parameterized
+
 from airflow.www_rbac import utils
+from tests.test_utils.config import conf_vars
 
 if six.PY2:
     # Need `assertRegex` back-ported from unittest2
@@ -109,14 +111,38 @@ class UtilsTest(unittest.TestCase):
         self.assertEqual('search=bash_',
                          utils.get_params(search='bash_'))
 
-    def test_params_showPaused_true(self):
-        """Should detect True as default for showPaused"""
-        self.assertEqual('',
-                         utils.get_params(showPaused=True))
+    @parameterized.expand([
+        (True, False, ''),
+        (False, True, ''),
+        (True, True, 'showPaused=True'),
+        (False, False, 'showPaused=False'),
+        (None, True, ''),
+        (None, False, ''),
+    ])
+    def test_params_showPaused(self, show_paused, hide_by_default, expected_result):
+        with conf_vars({('webserver', 'hide_paused_dags_by_default'): str(hide_by_default)}):
+            self.assertEqual(expected_result,
+                             utils.get_params(showPaused=show_paused))
 
-    def test_params_showPaused_false(self):
-        self.assertEqual('showPaused=False',
-                         utils.get_params(showPaused=False))
+    @parameterized.expand([
+        (True, False, True),
+        (False, True, True),
+        (True, True, False),
+        (False, False, False),
+        (None, True, True),
+        (None, False, True),
+    ])
+    def test_should_remove_show_paused_from_url_params(self, show_paused,
+                                                       hide_by_default, expected_result):
+        with conf_vars({('webserver', 'hide_paused_dags_by_default'): str(hide_by_default)}):
+
+            self.assertEqual(
+                expected_result,
+                utils._should_remove_show_paused_from_url_params(
+                    show_paused,
+                    hide_by_default
+                )
+            )
 
     def test_params_none_and_zero(self):
         qs = utils.get_params(a=0, b=None)
@@ -136,40 +162,6 @@ class UtilsTest(unittest.TestCase):
     def test_params_escape(self):
         self.assertEqual('search=%27%3E%22%2F%3E%3Cimg+src%3Dx+onerror%3Dalert%281%29%3E',
                          utils.get_params(search="'>\"/><img src=x onerror=alert(1)>"))
-
-    def test_open_maybe_zipped_normal_file(self):
-        with mock.patch(
-                'io.open', mock.mock_open(read_data="data")) as mock_file:
-            utils.open_maybe_zipped('/path/to/some/file.txt')
-            mock_file.assert_called_with('/path/to/some/file.txt', mode='r')
-
-    def test_open_maybe_zipped_normal_file_with_zip_in_name(self):
-        path = '/path/to/fakearchive.zip.other/file.txt'
-        with mock.patch(
-                'io.open', mock.mock_open(read_data="data")) as mock_file:
-            utils.open_maybe_zipped(path)
-            mock_file.assert_called_with(path, mode='r')
-
-    @mock.patch("zipfile.is_zipfile")
-    @mock.patch("zipfile.ZipFile")
-    def test_open_maybe_zipped_archive(self, mocked_ZipFile, mocked_is_zipfile):
-        mocked_is_zipfile.return_value = True
-        instance = mocked_ZipFile.return_value
-        instance.open.return_value = mock.mock_open(read_data="data")
-
-        utils.open_maybe_zipped('/path/to/archive.zip/deep/path/to/file.txt')
-
-        mocked_is_zipfile.assert_called_once()
-        (args, kwargs) = mocked_is_zipfile.call_args_list[0]
-        self.assertEqual('/path/to/archive.zip', args[0])
-
-        mocked_ZipFile.assert_called_once()
-        (args, kwargs) = mocked_ZipFile.call_args_list[0]
-        self.assertEqual('/path/to/archive.zip', args[0])
-
-        instance.open.assert_called_once()
-        (args, kwargs) = instance.open.call_args_list[0]
-        self.assertEqual('deep/path/to/file.txt', args[0])
 
     def test_state_token(self):
         # It's shouldn't possible to set these odd values anymore, but lets

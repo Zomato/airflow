@@ -37,7 +37,37 @@ class TestAwsLambdaHook(unittest.TestCase):
         self.assertIsNotNone(hook.get_conn())
 
     @mock_sns
-    def test_publish_to_target(self):
+    def test_publish_to_target_with_subject(self):
+        hook = AwsSnsHook(aws_conn_id='aws_default')
+
+        message = "Hello world"
+        topic_name = "test-topic"
+        subject = "test-subject"
+        target = hook.get_conn().create_topic(Name=topic_name).get('TopicArn')
+
+        response = hook.publish_to_target(target, message, subject)
+
+        assert 'MessageId' in response
+
+    @mock_sns
+    def test_publish_to_target_with_attributes(self):
+        hook = AwsSnsHook(aws_conn_id='aws_default')
+
+        message = "Hello world"
+        topic_name = "test-topic"
+        target = hook.get_conn().create_topic(Name=topic_name).get('TopicArn')
+
+        response = hook.publish_to_target(target, message, message_attributes={
+            'test-string': 'string-value',
+            'test-number': 123456,
+            'test-array': ['first', 'second', 'third'],
+            'test-binary': b'binary-value',
+        })
+
+        assert 'MessageId' in response
+
+    @mock_sns
+    def test_publish_to_target_plain(self):
         hook = AwsSnsHook(aws_conn_id='aws_default')
 
         message = "Hello world"
@@ -46,7 +76,7 @@ class TestAwsLambdaHook(unittest.TestCase):
 
         response = hook.publish_to_target(target, message)
 
-        self.assertTrue('MessageId' in response)
+        assert 'MessageId' in response
 
 
 if __name__ == '__main__':

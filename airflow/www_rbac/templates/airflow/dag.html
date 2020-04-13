@@ -15,7 +15,8 @@
   limitations under the License.
 
 #}
-{% extends "airflow/master.html" %}
+
+{% extends base_template %}
 
 {% block title %}Airflow - DAG {{ dag.dag_id }}{% endblock %}
 
@@ -31,7 +32,7 @@
         <span style='color:#AAA;'>SUBDAG: </span> <span> {{ dag.dag_id }}</span>
       {% else %}
         <input id="pause_resume" dag_id="{{ dag.dag_id }}" type="checkbox" {{ "checked" if not dag.is_paused else "" }} data-toggle="toggle" data-size="mini" method="post">
-        <span style='color:#AAA;'>DAG: </span> <span> {{ dag.dag_id }}</span> <small class="text-muted"> {{ dag.description }} </small>
+        <span style='color:#AAA;'>DAG: </span> <span> {{ dag.dag_id }}</span> <small class="text-muted"> {{ dag.description_unicode }} </small>
       {% endif %}
       {% if root %}
         <span style='color:#AAA;'>ROOT: </span> <span> {{ root }}</span>
@@ -100,8 +101,7 @@
         </a>
       </li>
       <li>
-        <a href="{{ url_for('Airflow.trigger', dag_id=dag.dag_id, origin=url_for('Airflow.tree', dag_id=dag.dag_id)) }}"
-          onclick="return confirmTriggerDag(this, '{{ dag.safe_dag_id }}')">
+        <a href="{{ url_for('Airflow.trigger', dag_id=dag.dag_id, origin=url_for('Airflow.' + dag.get_default_view(), dag_id=dag.dag_id)) }}">
           <span class="glyphicon glyphicon-play-circle" aria-hidden="true"></span>
           Trigger DAG
         </a>
@@ -441,32 +441,30 @@ function updateQueryStringParameter(uri, key, value) {
                   "&dag_id=" + encodeURIComponent(dag_id) +
                   "&execution_date=" + encodeURIComponent(execution_date) +
                   "&link_name=" + encodeURIComponent(link);
+          var external_link = $('<a href="#" data-toggle="tooltip" class="btn btn-primary disabled" target="_blank"></a>')
+          var link_tooltip = $('<span class="tool-tip" data-toggle="tooltip" style="padding-right: 2px; padding-left: 3px" data-placement="top" ' +
+            'title="link not yet available"></span>');
+          link_tooltip.append(external_link)
+          external_link.text(link);
 
-          var underscore_link = link.split(" ").join("_");
-          var a = '<span class="tool-tip" data-toggle="tooltip" style="padding-right: 2px; padding-left: 3px" data-placement="top" ' +
-                  'title="link not yet available" id="tooltip-' + underscore_link +'">' +
-                    '<a id="link-' + underscore_link +'" href="#" data-toggle="tooltip" class="btn btn-primary disabled" target="_blank">' + link + '</a>' +
-                  '</span>';
           $.ajax(
             {url: url,
              cache: false,
              success: function (data, textStatus, jqXHR) {
-               var external_link = $( "#link-" + underscore_link );
                external_link.attr('href', data['url']);
                external_link.removeClass('disabled');
-               $("#tooltip-" + underscore_link).tooltip('disable');
+               link_tooltip.tooltip('disable');
              },
              error:  function (data) {
-               var link_tooltip = $("#tooltip-" + underscore_link);
                link_tooltip.tooltip('hide').attr('title', data['responseJSON']['error']).tooltip('fixTitle');
              }
            });
 
-          markupArr.push(a)
+          markupArr.push(link_tooltip)
         });
 
         $('#extra_links').prev('hr').show();
-        $('#extra_links').append(markupArr.join('')).show();
+        $('#extra_links').append(markupArr).show();
         $('[data-toggle="tooltip"]').tooltip();
       }
 

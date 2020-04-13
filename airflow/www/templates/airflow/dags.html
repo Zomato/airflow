@@ -81,7 +81,7 @@
 
                 <!-- Column 3: Name -->
                 <td>
-                  <a href="{{ url_for('airflow.'+ dag.get_default_view(), dag_id=dag.dag_id) }}" title="{{ dag.description }}">
+                  <a href="{{ url_for('airflow.'+ dag.get_default_view(), dag_id=dag.dag_id) }}" title="{{ dag.description[0:80] + '...' if dag.description|length > 80 else dag.description }}">
                       {{ dag.dag_id }}
                   </a>
                 </td>
@@ -124,8 +124,7 @@
                 {% if dag %}
 
                 <!-- Trigger Dag -->
-                <a href="{{ url_for('airflow.trigger', dag_id=dag.dag_id) }}&origin={{ request.base_url }}"
-                   onclick="return confirmTriggerDag(this, '{{ dag.safe_dag_id }}')">
+                <a href="{{ url_for('airflow.trigger', dag_id=dag.dag_id) }}&origin={{ request.base_url }}">
                     <span class="glyphicon glyphicon-play-circle" aria-hidden="true" data-original-title="Trigger Dag"></span>
                 </a>
 
@@ -249,10 +248,14 @@
         }
         return false;
       }
-      all_dags = $("[id^=toggle]");
-      $.each(all_dags, function(i,v) {
+
+      var encoded_dag_ids = [];
+
+      $.each($("[id^=toggle]"), function(i, v) {
+        var dag_id = $(v).attr('dag_id');
+        encoded_dag_ids.push(encodeURIComponent(dag_id));
+
         $(v).change (function() {
-          var dag_id =  $(v).attr('dag_id');
           if ($(v).prop('checked')) {
             is_paused = 'true'
           } else {
@@ -352,7 +355,7 @@
               })
               .attr('fill-opacity', 0)
               .attr('r', diameter/2)
-              .attr('title', function(d) {return d.state})
+              .attr('title', function(d) {return d.state || 'none'})
               .attr('style', function(d) {
                 if (d.count > 0)
                     return"cursor:pointer;"
@@ -390,7 +393,7 @@
           container: "body",
         });
       });
-      d3.json("{{ url_for('airflow.task_stats') }}", function(error, json) {
+      d3.json("{{ url_for('airflow.task_stats') }}?dag_ids=" + (encoded_dag_ids.join(',')), function(error, json) {
         for(var dag_id in json) {
             states = json[dag_id];
             g = d3.select('svg#task-run-' + dag_id.replace(/\./g, '__dot__'))

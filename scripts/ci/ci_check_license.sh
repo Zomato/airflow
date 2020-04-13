@@ -15,26 +15,46 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+export AIRFLOW_MOUNT_SOURCE_DIR_FOR_STATIC_CHECKS="true"
+export PYTHON_MAJOR_MINOR_VERSION=${PYTHON_MAJOR_MINOR_VERSION:-3.5}
 
-set -uo pipefail
+# shellcheck source=scripts/ci/_script_init.sh
+. "$( dirname "${BASH_SOURCE[0]}" )/_script_init.sh"
 
-MY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+function run_check_license() {
+    echo
+    echo "Running Licence check"
+    echo
 
-export PYTHON_VERSION=3.5
-export AIRFLOW_CI_SILENT=${AIRFLOW_CI_SILENT:="true"}
-export ASSUME_QUIT_TO_ALL_QUESTIONS=${ASSUME_QUIT_TO_ALL_QUESTIONS:="true"}
+    # This is the target of a symlink in airflow/www/static/docs -
+    # and rat exclude doesn't cope with the symlink target doesn't exist
+    mkdir -p docs/_build/html/
 
-# shellcheck source=scripts/ci/_utils.sh
-. "${MY_DIR}/_utils.sh"
+    echo "Running license checks. This can take a while."
 
-basic_sanity_checks
+    if ! docker run "${EXTRA_DOCKER_FLAGS[@]}" -t \
+            --user "$(id -ur):$(id -gr)" \
+            --rm \
+            ashb/apache-rat:0.13-1 \
+            --exclude-file /opt/airflow/.rat-excludes \
+            --d /opt/airflow | tee "${AIRFLOW_SOURCES}/logs/rat-results.txt" ; then
+        echo >&2 "RAT exited abnormally"
+        exit 1
+    fi
 
-force_python_3_5
-
-script_start
-
-rebuild_checklicence_image_if_needed
+    set +e
+    ERRORS=$(grep -F "??" "${AIRFLOW_SOURCES}/logs/rat-results.txt")
+    set -e
+    if test ! -z "${ERRORS}"; then
+        echo >&2
+        echo >&2 "Could not find Apache license headers in the following files:"
+        echo >&2 "${ERRORS}"
+        exit 1
+        echo >&2
+    else
+        echo "RAT checks passed."
+        echo
+    fi
+}
 
 run_check_license
-
-script_end

@@ -27,7 +27,7 @@ from multiprocessing import Pool, cpu_count
 from celery import Celery
 from celery import states as celery_states
 
-from airflow import configuration
+from airflow.configuration import conf
 from airflow.config_templates.default_celery import DEFAULT_CELERY_CONFIG
 from airflow.exceptions import AirflowException
 from airflow.executors.base_executor import BaseExecutor
@@ -40,20 +40,22 @@ CELERY_FETCH_ERR_MSG_HEADER = 'Error fetching Celery task state'
 
 CELERY_SEND_ERR_MSG_HEADER = 'Error sending Celery task'
 
+OPERATION_TIMEOUT = conf.getint('celery', 'operation_timeout', fallback=2)
+
 '''
 To start the celery worker, run the command:
 airflow worker
 '''
 
-if configuration.conf.has_option('celery', 'celery_config_options'):
+if conf.has_option('celery', 'celery_config_options'):
     celery_configuration = import_string(
-        configuration.conf.get('celery', 'celery_config_options')
+        conf.get('celery', 'celery_config_options')
     )
 else:
     celery_configuration = DEFAULT_CELERY_CONFIG
 
 app = Celery(
-    configuration.conf.get('celery', 'CELERY_APP_NAME'),
+    conf.get('celery', 'CELERY_APP_NAME'),
     config_source=celery_configuration)
 
 
@@ -100,7 +102,7 @@ def fetch_celery_task_state(celery_task):
     """
 
     try:
-        with timeout(seconds=2):
+        with timeout(seconds=OPERATION_TIMEOUT):
             # Accessing state property of celery task will make actual network request
             # to get the current state of the task.
             res = (celery_task[0], celery_task[1].state)
@@ -114,7 +116,7 @@ def fetch_celery_task_state(celery_task):
 def send_task_to_executor(task_tuple):
     key, simple_ti, command, queue, task = task_tuple
     try:
-        with timeout(seconds=2):
+        with timeout(seconds=OPERATION_TIMEOUT):
             result = task.apply_async(args=[command], queue=queue)
     except Exception as e:
         exception_traceback = "Celery Task ID: {}\n{}".format(key,
@@ -141,7 +143,7 @@ class CeleryExecutor(BaseExecutor):
         # (which can become a bottleneck on bigger clusters) so we use
         # a multiprocessing pool to speed this up.
         # How many worker processes are created for checking celery task state.
-        self._sync_parallelism = configuration.getint('celery', 'SYNC_PARALLELISM')
+        self._sync_parallelism = conf.getint('celery', 'SYNC_PARALLELISM')
         if self._sync_parallelism == 0:
             self._sync_parallelism = max(1, cpu_count() - 1)
 
