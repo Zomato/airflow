@@ -95,11 +95,11 @@ RUN curl --fail --location https://deb.nodesource.com/setup_10.x | bash - \
            build-essential \
            ca-certificates \
            curl \
+           git \
            gnupg \
            dirmngr \
            freetds-bin \
            freetds-dev \
-           git \
            gosu \
            krb5-user \
            ldap-utils \
@@ -112,23 +112,16 @@ RUN curl --fail --location https://deb.nodesource.com/setup_10.x | bash - \
            libssl-dev \
            locales  \
            lsb-release \
-           net-tools \
-           netcat \
            nodejs \
            openssh-client \
            postgresql-client \
-           procps \
            python-selinux \
-           rsync \
            sasl2-bin \
            software-properties-common \
            sqlite3 \
            sudo \
-           telnet \
-           tree \
            unixodbc \
            unixodbc-dev \
-           vim \
            yarn \
     && apt-get autoremove -yqq --purge \
     && apt-get clean \
@@ -283,16 +276,27 @@ RUN mkdir -pv /usr/share/man/man1 \
            locales  \
            lsb-release \
            netcat \
+           net-tools \
            openssh-client \
            postgresql-client \
+           procps \
            rsync \
            sasl2-bin \
            sqlite3 \
            sudo \
+           telnet \
+           tree \
            unixodbc \
+           vim \
     && apt-get autoremove -yqq --purge \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+       /tmp/* \
+       /var/tmp/* \
+       /usr/share/man \
+       /usr/share/doc \
+       /usr/share/doc-base
 
 # Install MySQL client from Oracle repositories (Debian installs mariadb)
 RUN KEY="A4A9406876FCBD3C456770C88C718D3B5072E1F5" \

@@ -107,7 +107,7 @@ services:
             - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
             - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
             - AIRFLOW__CORE__LOAD_EXAMPLES=False
-        command: scheduler -r 30
+        command: scheduler
 
     worker:
         image: zdp-airflow:1.10.10
