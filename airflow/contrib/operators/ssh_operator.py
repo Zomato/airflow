@@ -80,7 +80,7 @@ class SSHOperator(BaseOperator):
         self.timeout = timeout
         self.environment = environment
         self.do_xcom_push = do_xcom_push
-        self.get_pty = self.command.startswith('sudo') or get_pty
+        self.get_pty = True if self.command and self.command.startswith('sudo') else get_pty
 
     def execute(self, context):
         try:
