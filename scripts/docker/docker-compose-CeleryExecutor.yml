@@ -28,7 +28,7 @@ services:
             - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
             - AIRFLOW__CORE__LOAD_EXAMPLES=False
         volumes:
-            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
+            - ../../airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
         ports:
             - "8080:8080"
@@ -45,7 +45,7 @@ services:
             - postgres
             - redis
         volumes:
-            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
+            - ../../airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
@@ -63,7 +63,7 @@ services:
         - postgres
         - redis
       volumes:
-        - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
+        - ../../airflow/dags:/home/airflow/airflow/dags
         # Uncomment to include custom plugins
         # - ./plugins:/usr/local/airflow/plugins
       environment:
@@ -97,7 +97,7 @@ services:
         depends_on:
             - webserver
         volumes:
-            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
+            - ../../airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
@@ -115,7 +115,7 @@ services:
         depends_on:
             - scheduler
         volumes:
-            - /Users/C3PO/Desktop/airflow/dags:/home/airflow/airflow/dags
+            - ../../airflow/dags:/home/airflow/airflow/dags
             # Uncomment to include custom plugins
             # - ./plugins:/usr/local/airflow/plugins
         environment:
