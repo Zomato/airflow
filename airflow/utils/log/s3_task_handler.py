@@ -20,7 +20,7 @@ import os
 
 from cached_property import cached_property
 
-from airflow import configuration
+from airflow.configuration import conf
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.log.file_task_handler import FileTaskHandler
 
@@ -41,7 +41,7 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
 
     @cached_property
     def hook(self):
-        remote_conn_id = configuration.conf.get('core', 'REMOTE_LOG_CONN_ID')
+        remote_conn_id = conf.get('core', 'REMOTE_LOG_CONN_ID')
         try:
             from airflow.hooks.S3_hook import S3Hook
             return S3Hook(remote_conn_id)
@@ -58,6 +58,12 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
         # upload local log file to S3 remote storage.
         self.log_relative_path = self._render_filename(ti, ti.try_number)
         self.upload_on_close = not ti.raw
+
+        # Clear the file first so that duplicate data is not uploaded
+        # when re-using the same path (e.g. with rescheduled sensors)
+        if self.upload_on_close:
+            with open(self.handler.baseFilename, 'w'):
+                pass
 
     def close(self):
         """
@@ -90,6 +96,7 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
         """
         Read logs of given task instance and try_number from S3 remote storage.
         If failed, read the log from task instance host machine.
+
         :param ti: task instance object
         :param try_number: task instance try_number to read logs from
         :param metadata: log metadata,
@@ -115,6 +122,7 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
     def s3_log_exists(self, remote_log_location):
         """
         Check if remote_log_location exists in remote storage
+
         :param remote_log_location: log's location in remote storage
         :return: True if location exists else False
         """
@@ -128,6 +136,7 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
         """
         Returns the log found at the remote_log_location. Returns '' if no
         logs are found or there is an error.
+
         :param remote_log_location: the log's location in remote storage
         :type remote_log_location: str (path)
         :param return_error: if True, returns a string error message if an
@@ -147,6 +156,7 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
         """
         Writes the log to the remote_log_location. Fails silently if no hook
         was created.
+
         :param log: the log to write to the remote_log_location
         :type log: str
         :param remote_log_location: the log's location in remote storage
@@ -164,7 +174,7 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
                 log,
                 key=remote_log_location,
                 replace=True,
-                encrypt=configuration.conf.getboolean('core', 'ENCRYPT_S3_LOGS'),
+                encrypt=conf.getboolean('core', 'ENCRYPT_S3_LOGS'),
             )
         except Exception:
             self.log.exception('Could not write logs to %s', remote_log_location)

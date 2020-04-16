@@ -15,39 +15,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+set -x
 
-set -xeuo pipefail
+# shellcheck source=scripts/ci/_script_init.sh
+. "$( dirname "${BASH_SOURCE[0]}" )/_script_init.sh"
 
-MY_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export UPGRADE_TO_LATEST_REQUIREMENTS="false"
 
-# shellcheck source=scripts/ci/_utils.sh
-. "${MY_DIR}/_utils.sh"
-
-basic_sanity_checks
-
-script_start
-
-export AIRFLOW_CONTAINER_FORCE_PULL_IMAGES="true"
-
-# Cleanup docker installation. It should be empty in CI but let's not risk
-docker system prune --all --force
-
-if [[ ${TRAVIS_JOB_NAME} == "Tests"* ]]; then
-    rebuild_ci_image_if_needed
-elif [[ ${TRAVIS_JOB_NAME} == "Check lic"* ]]; then
-    rebuild_checklicence_image_if_needed
-else
-    rebuild_ci_slim_image_if_needed
+# In case of CRON jobs on Travis we run builds without cache
+if [[ "${TRAVIS_EVENT_TYPE:=}" == "cron" ]]; then
+    echo
+    echo "Disabling cache for CRON jobs"
+    echo
+    export DOCKER_CACHE="no-cache"
+    export PULL_BASE_IMAGES="true"
+    export UPGRADE_TO_LATEST_REQUIREMENTS="true"
 fi
 
-KUBERNETES_VERSION=${KUBERNETES_VERSION:=""}
-# Required for K8s v1.10.x. See
-# https://github.com/kubernetes/kubernetes/issues/61058#issuecomment-372764783
-if [[ "${KUBERNETES_VERSION}" == "" ]]; then
-    sudo mount --make-shared /
-    sudo service docker restart
-fi
+build_ci_image_on_ci
 
-pip install pre-commit yamllint
-
-script_end
+# We need newer version of six for Travis as they bundle 1.11.0 version
+sudo pip install pre-commit 'six~=1.14'

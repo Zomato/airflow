@@ -19,14 +19,24 @@
 
 import io
 import copy
+import json
 import logging.config
-import mock
+import sys
+
 import os
 import shutil
+import urllib
+
+import pytest
 import tempfile
 import unittest
-import sys
-import json
+
+import six
+from flask._compat import PY2
+
+from airflow.operators.bash_operator import BashOperator
+from airflow.utils.db import create_session
+from tests.compat import mock
 
 from six.moves.urllib.parse import quote_plus
 from werkzeug.test import Client
@@ -34,14 +44,18 @@ from werkzeug.wrappers import BaseResponse
 
 
 import airflow
-from airflow import models, configuration
+from airflow import models
+from airflow.configuration import conf
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
 from airflow.models import DAG, DagRun, TaskInstance
+from airflow.models.renderedtifields import RenderedTaskInstanceFields as RTIF
+from airflow.models.serialized_dag import SerializedDagModel
 from airflow.operators.dummy_operator import DummyOperator
 from airflow.settings import Session
 from airflow.utils.timezone import datetime
 from airflow.www import app as application
-from airflow import configuration as conf
+
+from tests.test_utils.config import conf_vars
 
 
 class TestChartModelView(unittest.TestCase):
@@ -62,7 +76,6 @@ class TestChartModelView(unittest.TestCase):
 
     def setUp(self):
         super(TestChartModelView, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -119,7 +132,6 @@ class TestVariableView(unittest.TestCase):
 
     def setUp(self):
         super(TestVariableView, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -191,7 +203,6 @@ class TestKnownEventView(unittest.TestCase):
 
     def setUp(self):
         super(TestKnownEventView, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -256,7 +267,6 @@ class TestPoolModelView(unittest.TestCase):
 
     def setUp(self):
         super(TestPoolModelView, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -335,10 +345,7 @@ class TestLogView(unittest.TestCase):
         # Make sure that the configure_logging is not cached
         self.old_modules = dict(sys.modules)
 
-        conf.load_test_config()
-
         # Create a custom logging configuration
-        configuration.load_test_config()
         logging_config = copy.deepcopy(DEFAULT_LOGGING_CONFIG)
         current_dir = os.path.dirname(os.path.abspath(__file__))
         logging_config['handlers']['task']['base_log_folder'] = os.path.normpath(
@@ -490,7 +497,6 @@ class TestVarImportView(unittest.TestCase):
 
     def setUp(self):
         super(TestVarImportView, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -566,12 +572,11 @@ class TestVarImportView(unittest.TestCase):
 class TestMountPoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        configuration.load_test_config()
-        configuration.conf.set("webserver", "base_url", "http://localhost:8080/test")
         # Clear cached app to remount base_url forcefully
         application.app = None
-        app = application.cached_app(config={'WTF_CSRF_ENABLED': False}, testing=True)
-        cls.client = Client(app, BaseResponse)
+        with conf_vars({("webserver", "base_url"): "http://localhost:8080/test"}):
+            app = application.cached_app(config={'WTF_CSRF_ENABLED': False}, testing=True)
+            cls.client = Client(app, BaseResponse)
 
     @classmethod
     def tearDownClass(cls):
@@ -604,7 +609,6 @@ class ViewWithDateTimeAndNumRunsAndDagRunsFormTester:
         self.endpoint = endpoint
 
     def setUp(self):
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -681,7 +685,7 @@ class ViewWithDateTimeAndNumRunsAndDagRunsFormTester:
         data = response.data.decode('utf-8')
         self.assertBaseDateAndNumRuns(
             self.runs[1].execution_date,
-            configuration.getint('webserver', 'default_dag_run_display_number'),
+            conf.getint('webserver', 'default_dag_run_display_number'),
             data)
         self.assertRunIsNotInDropdown(self.runs[0], data)
         self.assertRunIsSelected(self.runs[1], data)
@@ -836,7 +840,6 @@ class TestTaskInstanceView(unittest.TestCase):
 
     def setUp(self):
         super(TestTaskInstanceView, self).setUp()
-        configuration.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -852,7 +855,6 @@ class TestTaskInstanceView(unittest.TestCase):
 class TestDeleteDag(unittest.TestCase):
 
     def setUp(self):
-        conf.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -867,25 +869,141 @@ class TestDeleteDag(unittest.TestCase):
         # The delete-dag URL should be generated correctly for DAGs
         # that exist on the scheduler (DB) but not the webserver DagBag
 
+        dag_id = 'example_bash_operator'
         test_dag_id = "non_existent_dag"
 
         session = Session()
         DM = models.DagModel
-        session.query(DM).filter(DM.dag_id == 'example_bash_operator').update({'dag_id': test_dag_id})
+        dag_query = session.query(DM).filter(DM.dag_id == dag_id)
+        dag_query.first().tags = []  # To avoid "FOREIGN KEY constraint" error
+        session.commit()
+
+        dag_query.update({'dag_id': test_dag_id})
         session.commit()
 
         resp = self.app.get('/', follow_redirects=True)
         self.assertIn('/delete?dag_id={}'.format(test_dag_id), resp.data.decode('utf-8'))
         self.assertIn("return confirmDeleteDag(this, '{}')".format(test_dag_id), resp.data.decode('utf-8'))
 
-        session.query(DM).filter(DM.dag_id == test_dag_id).update({'dag_id': 'example_bash_operator'})
+        session.query(DM).filter(DM.dag_id == test_dag_id).update({'dag_id': dag_id})
         session.commit()
+
+
+class TestRenderedView(unittest.TestCase):
+
+    def setUp(self):
+        app = application.create_app(testing=True)
+        app.config['WTF_CSRF_METHODS'] = []
+        self.app = app.test_client()
+        self.default_date = datetime(2020, 3, 1)
+        self.dag = DAG(
+            "testdag",
+            start_date=self.default_date,
+            user_defined_filters={"hello": lambda name: 'Hello ' + name},
+            user_defined_macros={"fullname": lambda fname, lname: fname + " " + lname}
+        )
+        self.task1 = BashOperator(
+            task_id='task1',
+            bash_command='{{ task_instance_key_str }}',
+            dag=self.dag
+        )
+        self.task2 = BashOperator(
+            task_id='task2',
+            bash_command='echo {{ fullname("Apache", "Airflow") | hello }}',
+            dag=self.dag
+        )
+        SerializedDagModel.write_dag(self.dag)
+        with create_session() as session:
+            session.query(RTIF).delete()
+
+    def tearDown(self):
+        super(TestRenderedView, self).tearDown()
+        with create_session() as session:
+            session.query(RTIF).delete()
+
+    def percent_encode(self, obj):
+        if PY2:
+            return urllib.quote_plus(str(obj))
+        else:
+            return urllib.parse.quote_plus(str(obj))
+
+    @mock.patch('airflow.www.views.STORE_SERIALIZED_DAGS', True)
+    @mock.patch('airflow.models.taskinstance.STORE_SERIALIZED_DAGS', True)
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_rendered_view(self, get_dag_function):
+        """
+        Test that the Rendered View contains the values from RenderedTaskInstanceFields
+        """
+        get_dag_function.return_value = SerializedDagModel.get(self.dag.dag_id).dag
+
+        self.assertEqual(self.task1.bash_command, '{{ task_instance_key_str }}')
+        ti = TaskInstance(self.task1, self.default_date)
+
+        with create_session() as session:
+            session.add(RTIF(ti))
+
+        url = ('/admin/airflow/rendered?task_id=task1&dag_id=testdag&execution_date={}'
+               .format(self.percent_encode(self.default_date)))
+
+        resp = self.app.get(url, follow_redirects=True)
+        self.assertIn("testdag__task1__20200301", resp.data.decode('utf-8'))
+
+    @mock.patch('airflow.www.views.STORE_SERIALIZED_DAGS', True)
+    @mock.patch('airflow.models.taskinstance.STORE_SERIALIZED_DAGS', True)
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_rendered_view_for_unexecuted_tis(self, get_dag_function):
+        """
+        Test that the Rendered View is able to show rendered values
+        even for TIs that have not yet executed
+        """
+        get_dag_function.return_value = SerializedDagModel.get(self.dag.dag_id).dag
+
+        self.assertEqual(self.task1.bash_command, '{{ task_instance_key_str }}')
+
+        url = ('/admin/airflow/rendered?task_id=task1&dag_id=task1&execution_date={}'
+               .format(self.percent_encode(self.default_date)))
+
+        resp = self.app.get(url, follow_redirects=True)
+        self.assertIn("testdag__task1__20200301", resp.data.decode('utf-8'))
+
+    @mock.patch('airflow.www.views.STORE_SERIALIZED_DAGS', True)
+    @mock.patch('airflow.models.taskinstance.STORE_SERIALIZED_DAGS', True)
+    @mock.patch('airflow.www.views.dagbag.get_dag')
+    def test_user_defined_filter_and_macros_raise_error(self, get_dag_function):
+        """
+        Test that the Rendered View is able to show rendered values
+        even for TIs that have not yet executed
+        """
+        get_dag_function.return_value = SerializedDagModel.get(self.dag.dag_id).dag
+
+        self.assertEqual(self.task2.bash_command,
+                         'echo {{ fullname("Apache", "Airflow") | hello }}')
+
+        url = ('/admin/airflow/rendered?task_id=task2&dag_id=testdag&execution_date={}'
+               .format(self.percent_encode(self.default_date)))
+
+        resp = self.app.get(url, follow_redirects=True)
+        self.assertNotIn("echo Hello Apache Airflow", resp.data.decode('utf-8'))
+
+        if six.PY3:
+            self.assertIn(
+                "Webserver does not have access to User-defined Macros or Filters "
+                "when Dag Serialization is enabled. Hence for the task that have not yet "
+                "started running, please use &#39;airflow tasks render&#39; for debugging the "
+                "rendering of template_fields.<br/><br/>OriginalError: no filter named &#39;hello&#39",
+                resp.data.decode('utf-8'))
+        else:
+            self.assertIn(
+                "Webserver does not have access to User-defined Macros or Filters "
+                "when Dag Serialization is enabled. Hence for the task that have not yet "
+                "started running, please use &#39;airflow tasks render&#39; for debugging the "
+                "rendering of template_fields.",
+                resp.data.decode('utf-8'))
 
 
 class TestTriggerDag(unittest.TestCase):
 
     def setUp(self):
-        conf.load_test_config()
         app = application.create_app(testing=True)
         app.config['WTF_CSRF_METHODS'] = []
         self.app = app.test_client()
@@ -897,6 +1015,7 @@ class TestTriggerDag(unittest.TestCase):
         self.assertIn('/trigger?dag_id=example_bash_operator', resp.data.decode('utf-8'))
         self.assertIn("return confirmDeleteDag(this, 'example_bash_operator')", resp.data.decode('utf-8'))
 
+    @pytest.mark.xfail(condition=True, reason="This test might be flaky on mysql")
     def test_trigger_dag_button(self):
 
         test_dag_id = "example_bash_operator"
@@ -910,6 +1029,47 @@ class TestTriggerDag(unittest.TestCase):
         run = self.session.query(DR).filter(DR.dag_id == test_dag_id).first()
         self.assertIsNotNone(run)
         self.assertIn("manual__", run.run_id)
+
+    @pytest.mark.xfail(condition=True, reason="This test might be flaky on mysql")
+    def test_trigger_dag_conf(self):
+
+        test_dag_id = "example_bash_operator"
+        conf_dict = {'string': 'Hello, World!'}
+
+        DR = models.DagRun
+        self.session.query(DR).delete()
+        self.session.commit()
+
+        self.app.post('/admin/airflow/trigger?dag_id={}'.format(test_dag_id),
+                      data={'conf': json.dumps(conf_dict)})
+
+        run = self.session.query(DR).filter(DR.dag_id == test_dag_id).first()
+        self.assertIsNotNone(run)
+        self.assertIn("manual__", run.run_id)
+        self.assertEqual(run.conf, conf_dict)
+
+    @pytest.mark.xfail(condition=True, reason="This test might be flaky on mysql")
+    def test_trigger_dag_conf_malformed(self):
+        test_dag_id = "example_bash_operator"
+
+        DR = models.DagRun
+        self.session.query(DR).delete()
+        self.session.commit()
+
+        response = self.app.post('/admin/airflow/trigger?dag_id={}'.format(test_dag_id),
+                                 data={'conf': '{"a": "b"'})
+        self.assertIn('Invalid JSON configuration', response.data.decode('utf-8'))
+
+        run = self.session.query(DR).filter(DR.dag_id == test_dag_id).first()
+        self.assertIsNone(run)
+
+    def test_trigger_dag_form(self):
+        test_dag_id = "example_bash_operator"
+
+        resp = self.app.get('/admin/airflow/trigger?dag_id={}'.format(test_dag_id))
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Trigger DAG: {}'.format(test_dag_id), resp.data.decode('utf-8'))
 
 
 class HelpersTest(unittest.TestCase):
@@ -1055,6 +1215,75 @@ class TestConnectionModelView(unittest.TestCase):
         conn = self.session.query(models.Connection).filter(models.Connection.conn_id == self.CONN_ID).one()
 
         self.assertIsNone(conn.extra_dejson['extra__google_cloud_platform__num_retries'])
+
+
+class TestDagModelView(unittest.TestCase):
+    EDIT_URL = '/admin/dagmodel/edit/?id=example_bash_operator'
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestDagModelView, cls).setUpClass()
+        app = application.create_app(testing=True)
+        app.config['WTF_CSRF_METHODS'] = []
+        cls.app = app.test_client()
+
+    def test_edit_disabled_fields(self):
+        response = self.app.post(
+            self.EDIT_URL,
+            data={
+                "fileloc": "/etc/passwd",
+                "description": "Set in tests",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        session = Session()
+        DM = models.DagModel
+        dm = session.query(DM).filter(DM.dag_id == 'example_bash_operator').one()
+        session.close()
+
+        self.assertEqual(dm.description, "Set in tests")
+        self.assertNotEqual(dm.fileloc, "/etc/passwd", "Disabled fields shouldn't be updated")
+
+
+class TestTaskStats(unittest.TestCase):
+
+    def setUp(self):
+        app = application.create_app(testing=True)
+        app.config['WTF_CSRF_METHODS'] = []
+        self.app = app.test_client()
+
+        models.DagBag().get_dag("example_bash_operator").sync_to_db()
+        models.DagBag().get_dag("example_subdag_operator").sync_to_db()
+        models.DagBag().get_dag('example_xcom').sync_to_db()
+
+    def test_all_dags(self):
+        resp = self.app.get('/admin/airflow/task_stats', follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        stats = json.loads(resp.data.decode('utf-8'))
+        self.assertIn('example_bash_operator', stats)
+        self.assertIn('example_xcom', stats)
+
+    def test_selected_dags(self):
+        resp = self.app.get(
+            '/admin/airflow/task_stats?dag_ids=example_xcom',
+            follow_redirects=True)
+
+        self.assertEqual(resp.status_code, 200)
+        stats = json.loads(resp.data.decode('utf-8'))
+        self.assertNotIn('example_bash_operator', stats)
+        self.assertIn('example_xcom', stats)
+
+        # Multiple
+        resp = self.app.get(
+            '/admin/airflow/task_stats?dag_ids=example_xcom,example_bash_operator',
+            follow_redirects=True)
+
+        self.assertEqual(resp.status_code, 200)
+        stats = json.loads(resp.data.decode('utf-8'))
+        self.assertIn('example_bash_operator', stats)
+        self.assertIn('example_xcom', stats)
+        self.assertNotIn('example_subdag_operator', stats)
 
 
 if __name__ == '__main__':

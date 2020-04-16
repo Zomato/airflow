@@ -20,14 +20,11 @@
 from future import standard_library  # noqa
 standard_library.install_aliases()  # noqa
 
+import functools
 import inspect
 import json
 import time
 import markdown
-import re
-import zipfile
-import os
-import io
 
 from builtins import str
 from past.builtins import basestring
@@ -35,19 +32,21 @@ from past.builtins import basestring
 from pygments import highlight, lexers
 from pygments.formatters import HtmlFormatter
 from flask import request, Response, Markup, url_for
+from flask_appbuilder.forms import DateTimeField, FieldConverter
 from flask_appbuilder.models.sqla.interface import SQLAInterface
 import flask_appbuilder.models.sqla.filters as fab_sqlafilters
 import sqlalchemy as sqla
 from six.moves.urllib.parse import urlencode
 
-from airflow import configuration
+from airflow.configuration import conf
 from airflow.models import BaseOperator
 from airflow.operators.subdag_operator import SubDagOperator
 from airflow.utils import timezone
 from airflow.utils.json import AirflowJsonEncoder
 from airflow.utils.state import State
+from airflow.www_rbac.widgets import AirflowDateTimePickerWidget
 
-AUTHENTICATE = configuration.getboolean('webserver', 'AUTHENTICATE')
+AUTHENTICATE = conf.getboolean('webserver', 'AUTHENTICATE')
 
 DEFAULT_SENSITIVE_VARIABLE_FIELDS = (
     'password',
@@ -63,19 +62,32 @@ DEFAULT_SENSITIVE_VARIABLE_FIELDS = (
 def should_hide_value_for_key(key_name):
     # It is possible via importing variables from file that a key is empty.
     if key_name:
-        config_set = configuration.conf.getboolean('admin',
-                                                   'hide_sensitive_variable_fields')
+        config_set = conf.getboolean('admin',
+                                     'hide_sensitive_variable_fields')
         field_comp = any(s in key_name.lower() for s in DEFAULT_SENSITIVE_VARIABLE_FIELDS)
         return config_set and field_comp
     return False
 
 
 def get_params(**kwargs):
+    hide_paused_dags_by_default = conf.getboolean('webserver',
+                                                  'hide_paused_dags_by_default')
     if 'showPaused' in kwargs:
-        v = kwargs['showPaused']
-        if v or v is None:
+        show_paused_dags_url_param = kwargs['showPaused']
+        if _should_remove_show_paused_from_url_params(
+            show_paused_dags_url_param,
+            hide_paused_dags_by_default
+        ):
             kwargs.pop('showPaused')
     return urlencode({d: v if v is not None else '' for d, v in kwargs.items()})
+
+
+def _should_remove_show_paused_from_url_params(show_paused_dags_url_param,
+                                               hide_paused_dags_by_default):
+    return any([
+        show_paused_dags_url_param != hide_paused_dags_by_default,
+        show_paused_dags_url_param is None
+    ])
 
 
 def generate_pages(current_page, num_of_pages,
@@ -203,24 +215,6 @@ def json_response(obj):
         mimetype="application/json")
 
 
-ZIP_REGEX = re.compile(r'((.*\.zip){})?(.*)'.format(re.escape(os.sep)))
-
-
-def open_maybe_zipped(f, mode='r'):
-    """
-    Opens the given file. If the path contains a folder with a .zip suffix, then
-    the folder is treated as a zip archive, opening the file inside the archive.
-
-    :return: a file object, as in `open`, or as in `ZipFile.open`.
-    """
-
-    _, archive, filename = ZIP_REGEX.search(f).groups()
-    if archive and zipfile.is_zipfile(archive):
-        return zipfile.ZipFile(archive, mode=mode).open(filename)
-    else:
-        return io.open(f, mode=mode)
-
-
 def make_cache_key(*args, **kwargs):
     """
     Used by cache to get a unique key per URL
@@ -278,10 +272,14 @@ def nobr_f(attr_name):
 def datetime_f(attr_name):
     def dt(attr):
         f = attr.get(attr_name)
-        f = f.isoformat() if f else ''
+        as_iso = f.isoformat() if f else ''
+        if not as_iso:
+            return Markup('')
+        f = as_iso
         if timezone.utcnow().isoformat()[:4] == f[:4]:
             f = f[5:]
-        return Markup("<nobr>{}</nobr>").format(f)
+        # The empty title will be replaced in JS code when non-UTC dates are displayed
+        return Markup('<nobr><time title="" datetime="{}">{}</time></nobr>').format(as_iso, f)
     return dt
 
 
@@ -346,8 +344,7 @@ def get_attr_renderer():
         'doc_rst': lambda x: render(x, lexers.RstLexer),
         'doc_yaml': lambda x: render(x, lexers.YamlLexer),
         'doc_md': wrapped_markdown,
-        'python_callable': lambda x: render(
-            inspect.getsource(x), lexers.PythonLexer),
+        'python_callable': lambda x: render(get_python_source(x), lexers.PythonLexer),
     }
     return attr_renderer
 
@@ -377,6 +374,39 @@ def get_chart_height(dag):
     charts, that is charts that take up space based on the size of the components within.
     """
     return 600 + len(dag.tasks) * 10
+
+
+def get_python_source(x, return_none_if_x_none=False):
+    """
+    Helper function to get Python source (or not), preventing exceptions
+    """
+    if isinstance(x, str):
+        return x
+
+    if x is None and return_none_if_x_none:
+        return None
+
+    source_code = None
+
+    if isinstance(x, functools.partial):
+        source_code = inspect.getsource(x.func)
+
+    if source_code is None:
+        try:
+            source_code = inspect.getsource(x)
+        except TypeError:
+            pass
+
+    if source_code is None:
+        try:
+            source_code = inspect.getsource(x.__call__)
+        except (TypeError, AttributeError):
+            pass
+
+    if source_code is None:
+        source_code = 'No source code available for {}'.format(type(x))
+
+    return source_code
 
 
 class UtcAwareFilterMixin(object):
@@ -420,8 +450,8 @@ class CustomSQLAInterface(SQLAInterface):
     '_' from the key to lookup the column names.
 
     """
-    def __init__(self, obj):
-        super(CustomSQLAInterface, self).__init__(obj)
+    def __init__(self, obj, session=None):
+        super(CustomSQLAInterface, self).__init__(obj, session=session)
 
         def clean_column_names():
             if self.list_properties:
@@ -435,9 +465,21 @@ class CustomSQLAInterface(SQLAInterface):
 
     def is_utcdatetime(self, col_name):
         from airflow.utils.sqlalchemy import UtcDateTime
-        obj = self.list_columns[col_name].type
-        return isinstance(obj, UtcDateTime) or \
-            isinstance(obj, sqla.types.TypeDecorator) and \
-            isinstance(obj.impl, UtcDateTime)
+
+        if col_name in self.list_columns:
+            obj = self.list_columns[col_name].type
+            return isinstance(obj, UtcDateTime) or \
+                isinstance(obj, sqla.types.TypeDecorator) and \
+                isinstance(obj.impl, UtcDateTime)
+        return False
 
     filter_converter_class = UtcAwareFilterConverter
+
+
+# This class is used directly (i.e. we cant tell Fab to use a different
+# subclass) so we have no other option than to edit the converstion table in
+# place
+FieldConverter.conversion_table = (
+    (('is_utcdatetime', DateTimeField, AirflowDateTimePickerWidget),) +
+    FieldConverter.conversion_table
+)

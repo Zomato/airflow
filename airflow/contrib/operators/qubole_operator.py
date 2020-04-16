@@ -16,20 +16,42 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+"""Qubole operator"""
 
+import re
 from typing import Iterable
+
+from airflow.contrib.hooks.qubole_hook import (
+    COMMAND_ARGS, HYPHEN_ARGS, POSITIONAL_ARGS, QuboleHook, flatten_list,
+)
+from airflow.hooks.base_hook import BaseHook
 from airflow.models.baseoperator import BaseOperator, BaseOperatorLink
+from airflow.models.taskinstance import TaskInstance
 from airflow.utils.decorators import apply_defaults
-from airflow.contrib.hooks.qubole_hook import QuboleHook, COMMAND_ARGS, HYPHEN_ARGS, \
-    flatten_list, POSITIONAL_ARGS
 
 
 class QDSLink(BaseOperatorLink):
-
+    """Link to QDS"""
     name = 'Go to QDS'
 
     def get_link(self, operator, dttm):
-        return operator.get_hook().get_extra_links(operator, dttm)
+        """
+        Get link to qubole command result page.
+
+        :param operator: operator
+        :param dttm: datetime
+        :return: url link
+        """
+        ti = TaskInstance(task=operator, execution_date=dttm)
+        conn = BaseHook.get_connection(
+            getattr(operator, "qubole_conn_id", None) or operator.kwargs['qubole_conn_id'])
+        if conn and conn.host:
+            host = re.sub(r'api$', 'v2/analyze?command_id=', conn.host)
+        else:
+            host = 'https://api.qubole.com/v2/analyze?command_id='
+        qds_command_id = ti.xcom_pull(task_ids=operator.task_id, key='qbol_cmd_id')
+        url = host + str(qds_command_id) if qds_command_id else ''
+        return url
 
 
 class QuboleOperator(BaseOperator):
@@ -191,16 +213,19 @@ class QuboleOperator(BaseOperator):
             self.get_hook().kill(ti)
 
     def get_results(self, ti=None, fp=None, inline=True, delim=None, fetch=True):
+        """get_results from Qubole"""
         return self.get_hook().get_results(ti, fp, inline, delim, fetch)
 
     def get_log(self, ti):
+        """get_log from Qubole"""
         return self.get_hook().get_log(ti)
 
     def get_jobs_id(self, ti):
+        """get jobs_id from Qubole"""
         return self.get_hook().get_jobs_id(ti)
 
     def get_hook(self):
-        # Reinitiating the hook, as some template fields might have changed
+        """Reinitialising the hook, as some template fields might have changed"""
         return QuboleHook(*self.args, **self.kwargs)
 
     def __getattribute__(self, name):

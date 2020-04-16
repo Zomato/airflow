@@ -26,6 +26,7 @@ import time
 from collections import OrderedDict
 
 from sqlalchemy.orm.session import make_transient
+from tabulate import tabulate
 
 from airflow import executors, models
 from airflow.exceptions import (
@@ -36,7 +37,7 @@ from airflow.exceptions import (
     TaskConcurrencyLimitReached,
 )
 from airflow.models import DAG, DagPickle, DagRun
-from airflow.ti_deps.dep_context import DepContext, RUN_DEPS
+from airflow.ti_deps.dep_context import DepContext, BACKFILL_QUEUED_DEPS
 from airflow.utils import timezone
 from airflow.utils.configuration import tmp_configuration_copy
 from airflow.utils.db import provide_session
@@ -84,19 +85,19 @@ class BackfillJob(BaseJob):
                      ):
             """
             :param to_run: Tasks to run in the backfill
-            :type to_run: dict[tuple[string, string, datetime.datetime], airflow.models.TaskInstance]
+            :type to_run: dict[tuple[TaskInstanceKeyType], airflow.models.TaskInstance]
             :param running: Maps running task instance key to task instance object
-            :type running: dict[tuple[string, string, datetime.datetime], airflow.models.TaskInstance]
+            :type running: dict[tuple[TaskInstanceKeyType], airflow.models.TaskInstance]
             :param skipped: Tasks that have been skipped
-            :type skipped: set[tuple[string, string, datetime.datetime]]
+            :type skipped: set[tuple[TaskInstanceKeyType]]
             :param succeeded: Tasks that have succeeded so far
-            :type succeeded: set[tuple[string, string, datetime.datetime]]
+            :type succeeded: set[tuple[TaskInstanceKeyType]]
             :param failed: Tasks that have failed
-            :type failed: set[tuple[string, string, datetime.datetime]]
+            :type failed: set[tuple[TaskInstanceKeyType]]
             :param not_ready: Tasks not ready for execution
-            :type not_ready: set[tuple[string, string, datetime.datetime]]
+            :type not_ready: set[tuple[TaskInstanceKeyType]]
             :param deadlocked: Deadlocked tasks
-            :type deadlocked: set[tuple[string, string, datetime.datetime]]
+            :type deadlocked: set[airflow.models.TaskInstance]
             :param active_runs: Active dag runs at a certain point in time
             :type active_runs: list[DagRun]
             :param executed_dag_run_dates: Datetime objects for the executed dag runs
@@ -465,47 +466,46 @@ class BackfillJob(BaseJob):
                         return
 
                 backfill_context = DepContext(
-                    deps=RUN_DEPS,
+                    deps=BACKFILL_QUEUED_DEPS,
                     ignore_depends_on_past=ignore_depends_on_past,
                     ignore_task_deps=self.ignore_task_deps,
                     flag_upstream_failed=True)
 
+                ti.refresh_from_db(lock_for_update=True, session=session)
                 # Is the task runnable? -- then run it
                 # the dependency checker can change states of tis
                 if ti.are_dependencies_met(
                         dep_context=backfill_context,
                         session=session,
                         verbose=self.verbose):
-                    ti.refresh_from_db(lock_for_update=True, session=session)
-                    if ti.state in (State.SCHEDULED, State.UP_FOR_RETRY, State.UP_FOR_RESCHEDULE):
-                        if executor.has_task(ti):
-                            self.log.debug(
-                                "Task Instance %s already in executor "
-                                "waiting for queue to clear",
-                                ti
-                            )
-                        else:
-                            self.log.debug('Sending %s to executor', ti)
-                            # Skip scheduled state, we are executing immediately
-                            ti.state = State.QUEUED
-                            ti.queued_dttm = timezone.utcnow() if not ti.queued_dttm else ti.queued_dttm
-                            session.merge(ti)
+                    if executor.has_task(ti):
+                        self.log.debug(
+                            "Task Instance %s already in executor "
+                            "waiting for queue to clear",
+                            ti
+                        )
+                    else:
+                        self.log.debug('Sending %s to executor', ti)
+                        # Skip scheduled state, we are executing immediately
+                        ti.state = State.QUEUED
+                        ti.queued_dttm = timezone.utcnow()
+                        session.merge(ti)
 
-                            cfg_path = None
-                            if executor.__class__ in (executors.LocalExecutor,
-                                                      executors.SequentialExecutor):
-                                cfg_path = tmp_configuration_copy()
+                        cfg_path = None
+                        if executor.__class__ in (executors.LocalExecutor,
+                                                  executors.SequentialExecutor):
+                            cfg_path = tmp_configuration_copy()
 
-                            executor.queue_task_instance(
-                                ti,
-                                mark_success=self.mark_success,
-                                pickle_id=pickle_id,
-                                ignore_task_deps=self.ignore_task_deps,
-                                ignore_depends_on_past=ignore_depends_on_past,
-                                pool=self.pool,
-                                cfg_path=cfg_path)
-                            ti_status.running[key] = ti
-                            ti_status.to_run.pop(key)
+                        executor.queue_task_instance(
+                            ti,
+                            mark_success=self.mark_success,
+                            pickle_id=pickle_id,
+                            ignore_task_deps=self.ignore_task_deps,
+                            ignore_depends_on_past=ignore_depends_on_past,
+                            pool=self.pool,
+                            cfg_path=cfg_path)
+                        ti_status.running[key] = ti
+                        ti_status.to_run.pop(key)
                     session.commit()
                     return
 
@@ -627,15 +627,28 @@ class BackfillJob(BaseJob):
 
     @provide_session
     def _collect_errors(self, ti_status, session=None):
+        def tabulate_ti_keys_set(set_ti_keys):
+            # Sorting by execution date first
+            sorted_ti_keys = sorted(
+                set_ti_keys, key=lambda ti_key: (ti_key[2], ti_key[0], ti_key[1], ti_key[3]))
+            return tabulate(sorted_ti_keys, headers=["DAG ID", "Task ID", "Execution date", "Try number"])
+
+        def tabulate_tis_set(set_tis):
+            # Sorting by execution date first
+            sorted_tis = sorted(
+                set_tis, key=lambda ti: (ti.execution_date, ti.dag_id, ti.task_id, ti.try_number))
+            tis_values = (
+                (ti.dag_id, ti.task_id, ti.execution_date, ti.try_number)
+                for ti in sorted_tis
+            )
+            return tabulate(tis_values, headers=["DAG ID", "Task ID", "Execution date", "Try number"])
+
         err = ''
         if ti_status.failed:
-            err += (
-                "---------------------------------------------------\n"
-                "Some task instances failed:\n{}\n".format(ti_status.failed))
+            err += "Some task instances failed:\n"
+            err += tabulate_ti_keys_set(ti_status.failed)
         if ti_status.deadlocked:
-            err += (
-                '---------------------------------------------------\n'
-                'BackfillJob is deadlocked.')
+            err += 'BackfillJob is deadlocked.'
             deadlocked_depends_on_past = any(
                 t.are_dependencies_met(
                     dep_context=DepContext(ignore_depends_on_past=False),
@@ -653,11 +666,16 @@ class BackfillJob(BaseJob):
                     'backfill with the option '
                     '"ignore_first_depends_on_past=True" or passing "-I" at '
                     'the command line.')
-            err += ' These tasks have succeeded:\n{}\n'.format(ti_status.succeeded)
-            err += ' These tasks are running:\n{}\n'.format(ti_status.running)
-            err += ' These tasks have failed:\n{}\n'.format(ti_status.failed)
-            err += ' These tasks are skipped:\n{}\n'.format(ti_status.skipped)
-            err += ' These tasks are deadlocked:\n{}\n'.format(ti_status.deadlocked)
+            err += '\nThese tasks have succeeded:\n'
+            err += tabulate_ti_keys_set(ti_status.succeeded)
+            err += '\n\nThese tasks are running:\n'
+            err += tabulate_ti_keys_set(ti_status.running)
+            err += '\n\nThese tasks have failed:\n'
+            err += tabulate_ti_keys_set(ti_status.failed)
+            err += '\n\nThese tasks are skipped:\n'
+            err += tabulate_ti_keys_set(ti_status.skipped)
+            err += '\n\nThese tasks are deadlocked:\n'
+            err += tabulate_tis_set(ti_status.deadlocked)
 
         return err
 
