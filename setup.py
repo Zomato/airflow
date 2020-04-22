@@ -464,7 +464,7 @@ devel_all = (all_dbs + atlas + aws +
              azure_blob_storage + azure_container_instances + azure_cosmos + azure_data_lake +
              celery + cgroups + crypto + datadog + devel + doc + docker +
              elasticsearch + gcp + grpc + hashicorp + jdbc + jenkins + kerberos + kubernetes + ldap +
-             oracle + papermill + password + flask_oauth + async_packages +
+             oracle + papermill + password + flask_oauth +
              redis + samba + segment + sendgrid + sentry + slack + snowflake + ssh +
              virtualenv + webhdfs + zendesk + zomato_custom + statsd)
 
