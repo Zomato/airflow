@@ -22,7 +22,7 @@ import datetime
 from dateutil.tz import tzlocal
 from mock import MagicMock, patch
 
-from airflow import AirflowException
+from airflow import configuration, AirflowException
 from airflow.contrib.sensors.emr_job_flow_sensor import EmrJobFlowSensor
 
 DESCRIBE_CLUSTER_RUNNING_RETURN = {
@@ -131,6 +131,8 @@ DESCRIBE_CLUSTER_TERMINATED_WITH_ERRORS_RETURN = {
 
 class TestEmrJobFlowSensor(unittest.TestCase):
     def setUp(self):
+        configuration.load_test_config()
+
         # Mock out the emr_client (moto has incorrect response)
         self.mock_emr_client = MagicMock()
         self.mock_emr_client.describe_cluster.side_effect = [
@@ -152,7 +154,7 @@ class TestEmrJobFlowSensor(unittest.TestCase):
         with patch('boto3.session.Session', self.boto3_session_mock):
             operator = EmrJobFlowSensor(
                 task_id='test_task',
-                poke_interval=0,
+                poke_interval=2,
                 job_flow_id='j-8989898989',
                 aws_conn_id='aws_default'
             )

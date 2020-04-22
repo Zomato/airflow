@@ -21,14 +21,12 @@ import os
 
 # inspect.signature is only available in Python 3. funcsigs.signature is
 # a backport.
-PY2 = False
 try:
     import inspect
     signature = inspect.signature
 except AttributeError:
     import funcsigs
     signature = funcsigs.signature
-    PY2 = True
 
 from copy import copy
 from functools import wraps
@@ -72,7 +70,9 @@ def apply_defaults(func):
             dag_args = copy(dag.default_args) or {}
             dag_params = copy(dag.params) or {}
 
-        params = kwargs.get('params', {}) or {}
+        params = {}
+        if 'params' in kwargs:
+            params = kwargs['params']
         dag_params.update(params)
 
         default_args = {}
@@ -97,9 +97,6 @@ def apply_defaults(func):
 
         result = func(*args, **kwargs)
         return result
-
-    if PY2:
-        wrapper.__wrapped__ = func
     return wrapper
 
 if 'BUILDING_AIRFLOW_DOCS' in os.environ:

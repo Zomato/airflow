@@ -22,7 +22,7 @@ from datetime import datetime
 from mock import MagicMock, patch
 from dateutil.tz import tzlocal
 
-from airflow import AirflowException
+from airflow import configuration, AirflowException
 from airflow.contrib.sensors.emr_step_sensor import EmrStepSensor
 
 DESCRIBE_JOB_STEP_RUNNING_RETURN = {
@@ -177,10 +177,12 @@ DESCRIBE_JOB_STEP_COMPLETED_RETURN = {
 
 class TestEmrStepSensor(unittest.TestCase):
     def setUp(self):
+        configuration.load_test_config()
+
         self.emr_client_mock = MagicMock()
         self.sensor = EmrStepSensor(
             task_id='test_task',
-            poke_interval=0,
+            poke_interval=1,
             job_flow_id='j-8989898989',
             step_id='s-VK57YR1Z9Z5N',
             aws_conn_id='aws_default',

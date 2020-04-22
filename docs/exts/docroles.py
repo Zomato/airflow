@@ -1,31 +1,27 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
 #
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
-"""Document roles"""
-from functools import partial
 
 from docutils import nodes, utils
 from sphinx.ext.autodoc.importer import import_module, mock
+from functools import partial
 
 
 class RoleException(Exception):
-    """Exception for roles extension """
+    pass
 
 
 def get_template_field(env, fullname):
@@ -59,15 +55,7 @@ def get_template_field(env, fullname):
     return list(template_fields)
 
 
-# noinspection PyUnusedLocal
-def template_field_role(app,
-                        typ,  # pylint: disable=unused-argument
-                        rawtext,
-                        text,
-                        lineno,
-                        inliner,
-                        options=None,  # pylint: disable=unused-argument
-                        content=None):  # pylint: disable=unused-argument
+def template_field_role(app, typ, rawtext, text, lineno, inliner, options={}, content=[]):
     """
     A role that allows you to include a list of template fields in the middle of the text. This is especially
     useful when writing guides describing how to use the operator.
@@ -75,18 +63,13 @@ def template_field_role(app,
 
     Sample usage::
 
-    :template-fields:
-        `airflow.contrib.operators.gcp_natural_language_operator.CloudLanguageAnalyzeSentimentOperator`
+    :template-fields:`airflow.contrib.operators.gcp_natural_language_operator.CloudLanguageAnalyzeSentimentOperator`
 
     For further information look at:
 
     * [http://docutils.sourceforge.net/docs/howto/rst-roles.html](Creating reStructuredText Interpreted
       Text Roles)
     """
-    if options is None:
-        options = {}
-    if content is None:
-        content = []
     text = utils.unescape(text)
 
     try:
@@ -106,8 +89,7 @@ def template_field_role(app,
 
 
 def setup(app):
-    """Sets the extension up"""
-    from docutils.parsers.rst import roles  # pylint: disable=wrong-import-order
+    from docutils.parsers.rst import roles
     roles.register_local_role("template-fields", partial(template_field_role, app))
 
     return {"version": "builtin", "parallel_read_safe": True, "parallel_write_safe": True}

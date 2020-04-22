@@ -17,13 +17,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""
-This module contains Base AWS Hook
-"""
-
-import logging
-import configparser
 import boto3
+import configparser
+import logging
 
 from airflow.exceptions import AirflowException
 from airflow.hooks.base_hook import BaseHook
@@ -97,7 +93,7 @@ class AwsHook(BaseHook):
         aws_session_token = None
         endpoint_url = None
 
-        if self.aws_conn_id:  # pylint: disable=too-many-nested-blocks
+        if self.aws_conn_id:
             try:
                 connection_object = self.get_connection(self.aws_conn_id)
                 extra_config = connection_object.extra_dejson
@@ -125,21 +121,17 @@ class AwsHook(BaseHook):
                 external_id = extra_config.get('external_id')
                 aws_account_id = extra_config.get('aws_account_id')
                 aws_iam_role = extra_config.get('aws_iam_role')
-                if 'aws_session_token' in extra_config and aws_session_token is None:
-                    aws_session_token = extra_config['aws_session_token']
 
-                if role_arn is None and aws_account_id is not None and aws_iam_role is not None:
+                if role_arn is None and aws_account_id is not None and \
+                        aws_iam_role is not None:
                     role_arn = "arn:aws:iam::{}:role/{}" \
                         .format(aws_account_id, aws_iam_role)
 
                 if role_arn is not None:
-
                     sts_session = boto3.session.Session(
                         aws_access_key_id=aws_access_key_id,
                         aws_secret_access_key=aws_secret_access_key,
-                        region_name=region_name,
-                        aws_session_token=aws_session_token
-                    )
+                        region_name=region_name)
 
                     sts_client = sts_session.client('sts')
 
@@ -172,14 +164,12 @@ class AwsHook(BaseHook):
             region_name=region_name), endpoint_url
 
     def get_client_type(self, client_type, region_name=None, config=None):
-        """ Get the underlying boto3 client using boto3 session"""
         session, endpoint_url = self._get_credentials(region_name)
 
         return session.client(client_type, endpoint_url=endpoint_url,
                               config=config, verify=self.verify)
 
     def get_resource_type(self, resource_type, region_name=None, config=None):
-        """ Get the underlying boto3 resource using boto3 session"""
         session, endpoint_url = self._get_credentials(region_name)
 
         return session.resource(resource_type, endpoint_url=endpoint_url,

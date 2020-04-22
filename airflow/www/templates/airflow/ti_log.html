@@ -52,12 +52,13 @@
 {% block tail %}
 {{ super() }}
 <script>
+    // TODO: make those constants configurable.
     // Time interval to wait before next log fetching. Default 2s.
-    const DELAY = "{{ (log_fetch_delay_sec | int ) * 1000 }}";
+    const DELAY = 2e3;
     // Distance away from page bottom to enable auto tailing.
-    const AUTO_TAILING_OFFSET = "{{ log_auto_tailing_offset | int }}";
+    const AUTO_TAILING_OFFSET = 30;
     // Animation speed for auto tailing log display.
-    const ANIMATION_SPEED = "{{ log_animation_speed | int }}";
+    const ANIMATION_SPEED = 1000;
     // Total number of tabs to show.
     const TOTAL_ATTEMPTS = "{{ logs|length }}";
 

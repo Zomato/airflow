@@ -20,8 +20,6 @@
 import os
 import unittest
 
-from google.auth.environment_vars import CREDENTIALS
-
 from airflow import AirflowException
 from airflow.contrib.operators.gcp_container_operator import GKEClusterCreateOperator, \
     GKEClusterDeleteOperator, GKEPodOperator
@@ -42,6 +40,7 @@ IMAGE = 'bash'
 
 GCLOUD_COMMAND = "gcloud container clusters get-credentials {} --zone {} --project {}"
 KUBE_ENV_VAR = 'KUBECONFIG'
+GAC_ENV_VAR = 'GOOGLE_APPLICATION_CREDENTIALS'
 FILE_NAME = '/tmp/mock_name'
 
 
@@ -139,8 +138,8 @@ class GKEPodOperatorTest(unittest.TestCase):
                                      name=TASK_NAME,
                                      namespace=NAMESPACE,
                                      image=IMAGE)
-        if CREDENTIALS in os.environ:
-            del os.environ[CREDENTIALS]
+        if GAC_ENV_VAR in os.environ:
+            del os.environ[GAC_ENV_VAR]
 
     def test_template_fields(self):
         self.assertTrue(set(KubernetesPodOperator.template_fields).issubset(
@@ -187,9 +186,9 @@ class GKEPodOperatorTest(unittest.TestCase):
         self.assertIn(KUBE_ENV_VAR, os.environ)
         self.assertEqual(os.environ[KUBE_ENV_VAR], FILE_NAME)
 
-        self.assertIn(CREDENTIALS, os.environ)
+        self.assertIn(GAC_ENV_VAR, os.environ)
         # since we passed in keyfile_path we should get a file
-        self.assertEqual(os.environ[CREDENTIALS], FILE_PATH)
+        self.assertEqual(os.environ[GAC_ENV_VAR], FILE_PATH)
 
         # Assert the gcloud command being called correctly
         proc_mock.assert_called_with(
@@ -222,9 +221,9 @@ class GKEPodOperatorTest(unittest.TestCase):
         self.assertIn(KUBE_ENV_VAR, os.environ)
         self.assertEqual(os.environ[KUBE_ENV_VAR], FILE_NAME)
 
-        self.assertIn(CREDENTIALS, os.environ)
+        self.assertIn(GAC_ENV_VAR, os.environ)
         # since we passed in keyfile_path we should get a file
-        self.assertEqual(os.environ[CREDENTIALS], FILE_PATH)
+        self.assertEqual(os.environ[GAC_ENV_VAR], FILE_PATH)
 
         # Assert the gcloud command being called correctly
         proc_mock.assert_called_with(
@@ -237,7 +236,7 @@ class GKEPodOperatorTest(unittest.TestCase):
         extras = {}
         self.gke_op._set_env_from_extras(extras)
         # _set_env_from_extras should not edit os.environ if extras does not specify
-        self.assertNotIn(CREDENTIALS, os.environ)
+        self.assertNotIn(GAC_ENV_VAR, os.environ)
 
     @mock.patch.dict(os.environ, {})
     @mock.patch('tempfile.NamedTemporaryFile')
@@ -256,7 +255,7 @@ class GKEPodOperatorTest(unittest.TestCase):
         file_mock.return_value.name = FILE_NAME
 
         key_file = self.gke_op._set_env_from_extras(extras)
-        self.assertEqual(os.environ[CREDENTIALS], FILE_NAME)
+        self.assertEqual(os.environ[GAC_ENV_VAR], FILE_NAME)
         self.assertIsInstance(key_file, mock.MagicMock)
 
     @mock.patch.dict(os.environ, {})
@@ -268,7 +267,7 @@ class GKEPodOperatorTest(unittest.TestCase):
         }
 
         self.gke_op._set_env_from_extras(extras)
-        self.assertEqual(os.environ[CREDENTIALS], TEST_PATH)
+        self.assertEqual(os.environ[GAC_ENV_VAR], TEST_PATH)
 
     def test_get_field(self):
         FIELD_NAME = 'test_field'

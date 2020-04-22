@@ -24,6 +24,6 @@ if [[ -d airflow/www_rbac/static/dist ]]; then
 fi
 
 cd airflow/www_rbac/
-yarn install --frozen-lockfile
-yarn run build
+npm install
+npm run build
 cd ../..

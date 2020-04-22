@@ -400,8 +400,7 @@ class DatabricksHookTokenTest(unittest.TestCase):
         conn = session.query(Connection) \
             .filter(Connection.conn_id == DEFAULT_CONN_ID) \
             .first()
-        conn.extra = json.dumps({'token': TOKEN, 'host': HOST})
-
+        conn.extra = json.dumps({'token': TOKEN})
         session.commit()
 
         self.hook = DatabricksHook()

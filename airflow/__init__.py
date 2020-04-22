@@ -35,10 +35,7 @@ __version__ = version.version
 import sys
 
 # flake8: noqa: F401
-# noinspection PyUnresolvedReferences
-from airflow import utils
-from airflow import settings
-from airflow.configuration import conf
+from airflow import settings, configuration as conf
 from airflow.models import DAG
 from flask_admin import BaseView
 from importlib import import_module

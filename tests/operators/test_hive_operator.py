@@ -22,24 +22,13 @@ from __future__ import print_function
 import datetime
 import os
 import unittest
-
-from airflow.operators.hive_operator import HiveOperator
-from airflow.operators.hive_stats_operator import HiveStatsCollectionOperator
-from airflow.operators.hive_to_mysql import HiveToMySqlTransfer
-from airflow.operators.hive_to_samba_operator import Hive2SambaOperator
-from airflow.operators.presto_check_operator import PrestoCheckOperator
-from airflow.operators.presto_to_mysql import PrestoToMySqlTransfer
-from airflow.sensors.hdfs_sensor import HdfsSensor
-from airflow.sensors.hive_partition_sensor import HivePartitionSensor
-from airflow.sensors.metastore_partition_sensor import MetastorePartitionSensor
-from airflow.sensors.named_hive_partition_sensor import NamedHivePartitionSensor
-from airflow.sensors.sql_sensor import SqlSensor
-from airflow.sensors.web_hdfs_sensor import WebHdfsSensor
 from tests.compat import mock
+import nose
 
-from airflow import DAG
-from airflow.configuration import conf
-from airflow.exceptions import AirflowSensorTimeout
+from airflow import DAG, configuration
+import airflow.operators.hive_operator
+configuration.load_test_config()
+
 
 DEFAULT_DATE = datetime.datetime(2015, 1, 1)
 DEFAULT_DATE_ISO = DEFAULT_DATE.isoformat()
@@ -49,6 +38,7 @@ DEFAULT_DATE_DS = DEFAULT_DATE_ISO[:10]
 class HiveEnvironmentTest(unittest.TestCase):
 
     def setUp(self):
+        configuration.load_test_config()
         args = {'owner': 'airflow', 'start_date': DEFAULT_DATE}
         dag = DAG('test_dag_id', default_args=args)
         self.dag = dag
@@ -71,6 +61,7 @@ class HiveEnvironmentTest(unittest.TestCase):
 class HiveCliTest(unittest.TestCase):
 
     def setUp(self):
+        configuration.load_test_config()
         self.nondefault_schema = "nondefault"
         os.environ["AIRFLOW__CORE__SECURITY"] = "kerberos"
 
@@ -96,7 +87,7 @@ class HiveCliTest(unittest.TestCase):
 class HiveOperatorConfigTest(HiveEnvironmentTest):
 
     def test_hive_airflow_default_config_queue(self):
-        t = HiveOperator(
+        t = airflow.operators.hive_operator.HiveOperator(
             task_id='test_default_config_queue',
             hql=self.hql,
             mapred_queue_priority='HIGH',
@@ -104,7 +95,7 @@ class HiveOperatorConfigTest(HiveEnvironmentTest):
             dag=self.dag)
 
         # just check that the correct default value in test_default.cfg is used
-        test_config_hive_mapred_queue = conf.get(
+        test_config_hive_mapred_queue = configuration.conf.get(
             'hive',
             'default_hive_mapred_queue'
         )
@@ -112,7 +103,7 @@ class HiveOperatorConfigTest(HiveEnvironmentTest):
 
     def test_hive_airflow_default_config_queue_override(self):
         specific_mapred_queue = 'default'
-        t = HiveOperator(
+        t = airflow.operators.hive_operator.HiveOperator(
             task_id='test_default_config_queue',
             hql=self.hql,
             mapred_queue=specific_mapred_queue,
@@ -127,7 +118,7 @@ class HiveOperatorTest(HiveEnvironmentTest):
 
     def test_hiveconf_jinja_translate(self):
         hql = "SELECT ${num_col} FROM ${hiveconf:table};"
-        t = HiveOperator(
+        t = airflow.operators.hive_operator.HiveOperator(
             hiveconf_jinja_translate=True,
             task_id='dry_run_basic_hql', hql=hql, dag=self.dag)
         t.prepare_template()
@@ -135,7 +126,7 @@ class HiveOperatorTest(HiveEnvironmentTest):
 
     def test_hiveconf(self):
         hql = "SELECT * FROM ${hiveconf:table} PARTITION (${hiveconf:day});"
-        t = HiveOperator(
+        t = airflow.operators.hive_operator.HiveOperator(
             hiveconfs={'table': 'static_babynames', 'day': '{{ ds }}'},
             task_id='dry_run_basic_hql', hql=hql, dag=self.dag)
         t.prepare_template()
@@ -146,16 +137,19 @@ class HiveOperatorTest(HiveEnvironmentTest):
 
 if 'AIRFLOW_RUNALL_TESTS' in os.environ:
 
+    import airflow.hooks.hive_hooks
+    import airflow.operators.presto_to_mysql
+
     class HivePrestoTest(HiveEnvironmentTest):
 
         def test_hive(self):
-            t = HiveOperator(
+            t = airflow.operators.hive_operator.HiveOperator(
                 task_id='basic_hql', hql=self.hql, dag=self.dag)
             t.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE,
                   ignore_ti_state=True)
 
         def test_hive_queues(self):
-            t = HiveOperator(
+            t = airflow.operators.hive_operator.HiveOperator(
                 task_id='test_hive_queues', hql=self.hql,
                 mapred_queue='default', mapred_queue_priority='HIGH',
                 mapred_job_name='airflow.test_hive_queues',
@@ -164,12 +158,12 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_hive_dryrun(self):
-            t = HiveOperator(
+            t = airflow.operators.hive_operator.HiveOperator(
                 task_id='dry_run_basic_hql', hql=self.hql, dag=self.dag)
             t.dry_run()
 
         def test_beeline(self):
-            t = HiveOperator(
+            t = airflow.operators.hive_operator.HiveOperator(
                 task_id='beeline_hql', hive_cli_conn_id='beeline_default',
                 hql=self.hql, dag=self.dag)
             t.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE,
@@ -179,13 +173,13 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
             sql = """
             SELECT count(1) FROM airflow.static_babynames_partitioned;
             """
-            t = PrestoCheckOperator(
+            t = airflow.operators.presto_check_operator.PrestoCheckOperator(
                 task_id='presto_check', sql=sql, dag=self.dag)
             t.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE,
                   ignore_ti_state=True)
 
         def test_presto_to_mysql(self):
-            t = PrestoToMySqlTransfer(
+            t = airflow.operators.presto_to_mysql.PrestoToMySqlTransfer(
                 task_id='presto_to_mysql_check',
                 sql="""
                 SELECT name, count(*) as ccount
@@ -199,7 +193,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_hdfs_sensor(self):
-            t = HdfsSensor(
+            t = airflow.operators.sensors.HdfsSensor(
                 task_id='hdfs_sensor_check',
                 filepath='hdfs://user/hive/warehouse/airflow.db/static_babynames',
                 dag=self.dag)
@@ -207,7 +201,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_webhdfs_sensor(self):
-            t = WebHdfsSensor(
+            t = airflow.operators.sensors.WebHdfsSensor(
                 task_id='webhdfs_sensor_check',
                 filepath='hdfs://user/hive/warehouse/airflow.db/static_babynames',
                 timeout=120,
@@ -216,7 +210,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_sql_sensor(self):
-            t = SqlSensor(
+            t = airflow.operators.sensors.SqlSensor(
                 task_id='hdfs_sensor_check',
                 conn_id='presto_default',
                 sql="SELECT 'x' FROM airflow.static_babynames LIMIT 1;",
@@ -225,7 +219,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_hive_stats(self):
-            t = HiveStatsCollectionOperator(
+            t = airflow.operators.hive_stats_operator.HiveStatsCollectionOperator(
                 task_id='hive_stats_check',
                 table="airflow.static_babynames_partitioned",
                 partition={'ds': DEFAULT_DATE_DS},
@@ -234,7 +228,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_named_hive_partition_sensor(self):
-            t = NamedHivePartitionSensor(
+            t = airflow.operators.sensors.NamedHivePartitionSensor(
                 task_id='hive_partition_check',
                 partition_names=[
                     "airflow.static_babynames_partitioned/ds={{ds}}"
@@ -244,7 +238,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_named_hive_partition_sensor_succeeds_on_multiple_partitions(self):
-            t = NamedHivePartitionSensor(
+            t = airflow.operators.sensors.NamedHivePartitionSensor(
                 task_id='hive_partition_check',
                 partition_names=[
                     "airflow.static_babynames_partitioned/ds={{ds}}",
@@ -255,28 +249,28 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_named_hive_partition_sensor_parses_partitions_with_periods(self):
-            t = NamedHivePartitionSensor.parse_partition_name(
+            t = airflow.operators.sensors.NamedHivePartitionSensor.parse_partition_name(
                 partition="schema.table/part1=this.can.be.an.issue/part2=ok")
             self.assertEqual(t[0], "schema")
             self.assertEqual(t[1], "table")
             self.assertEqual(t[2], "part1=this.can.be.an.issue/part2=this_should_be_ok")
 
+        @nose.tools.raises(airflow.exceptions.AirflowSensorTimeout)
         def test_named_hive_partition_sensor_times_out_on_nonexistent_partition(self):
-            with self.assertRaises(AirflowSensorTimeout):
-                t = NamedHivePartitionSensor(
-                    task_id='hive_partition_check',
-                    partition_names=[
-                        "airflow.static_babynames_partitioned/ds={{ds}}",
-                        "airflow.static_babynames_partitioned/ds=nonexistent"
-                    ],
-                    poke_interval=0.1,
-                    timeout=1,
-                    dag=self.dag)
-                t.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE,
-                      ignore_ti_state=True)
+            t = airflow.operators.sensors.NamedHivePartitionSensor(
+                task_id='hive_partition_check',
+                partition_names=[
+                    "airflow.static_babynames_partitioned/ds={{ds}}",
+                    "airflow.static_babynames_partitioned/ds=nonexistent"
+                ],
+                poke_interval=0.1,
+                timeout=1,
+                dag=self.dag)
+            t.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE,
+                  ignore_ti_state=True)
 
         def test_hive_partition_sensor(self):
-            t = HivePartitionSensor(
+            t = airflow.operators.sensors.HivePartitionSensor(
                 task_id='hive_partition_check',
                 table='airflow.static_babynames_partitioned',
                 dag=self.dag)
@@ -284,7 +278,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_hive_metastore_sql_sensor(self):
-            t = MetastorePartitionSensor(
+            t = airflow.operators.sensors.MetastorePartitionSensor(
                 task_id='hive_partition_check',
                 table='airflow.static_babynames_partitioned',
                 partition_name='ds={}'.format(DEFAULT_DATE_DS),
@@ -293,7 +287,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_hive2samba(self):
-            t = Hive2SambaOperator(
+            t = airflow.operators.hive_to_samba_operator.Hive2SambaOperator(
                 task_id='hive2samba_check',
                 samba_conn_id='tableau_samba',
                 hql="SELECT * FROM airflow.static_babynames LIMIT 10000",
@@ -303,7 +297,7 @@ if 'AIRFLOW_RUNALL_TESTS' in os.environ:
                   ignore_ti_state=True)
 
         def test_hive_to_mysql(self):
-            t = HiveToMySqlTransfer(
+            t = airflow.operators.hive_to_mysql.HiveToMySqlTransfer(
                 mysql_conn_id='airflow_db',
                 task_id='hive_to_mysql_check',
                 create=True,

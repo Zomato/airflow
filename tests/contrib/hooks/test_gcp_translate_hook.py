@@ -23,6 +23,8 @@ from airflow.contrib.hooks.gcp_translate_hook import CloudTranslateHook
 from tests.contrib.utils.base_gcp_mock import mock_base_gcp_hook_default_project_id
 from tests.compat import mock
 
+PROJECT_ID_TEST = 'project-id'
+
 
 class TestCloudTranslateHook(unittest.TestCase):
     def setUp(self):

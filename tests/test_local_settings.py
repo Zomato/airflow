@@ -27,14 +27,14 @@ from airflow.contrib.kubernetes.pod import Pod
 
 
 SETTINGS_FILE_POLICY = """
-def test_policy(task_instance):
+def policy(task_instance):
     task_instance.run_as_user = "myself"
 """
 
 SETTINGS_FILE_POLICY_WITH_DUNDER_ALL = """
-__all__ = ["test_policy"]
+__all__ = ["policy"]
 
-def test_policy(task_instance):
+def policy(task_instance):
     task_instance.run_as_user = "myself"
 
 def not_policy():
@@ -112,7 +112,7 @@ class LocalSettingsTest(unittest.TestCase):
             settings.import_local_settings()  # pylint: ignore
 
             task_instance = MagicMock()
-            settings.test_policy(task_instance)
+            settings.policy(task_instance)
 
             assert task_instance.run_as_user == "myself"
 
@@ -136,7 +136,7 @@ class LocalSettingsTest(unittest.TestCase):
             settings.import_local_settings()  # pylint: ignore
 
             task_instance = MagicMock()
-            settings.test_policy(task_instance)
+            settings.policy(task_instance)
 
             assert task_instance.run_as_user == "myself"
 
@@ -153,23 +153,3 @@ class LocalSettingsTest(unittest.TestCase):
             settings.pod_mutation_hook(pod)
 
             assert pod.namespace == 'airflow-tests'
-
-
-class TestStatsWithAllowList(unittest.TestCase):
-
-    def setUp(self):
-        from airflow.settings import SafeStatsdLogger, AllowListValidator
-        self.statsd_client = Mock()
-        self.stats = SafeStatsdLogger(self.statsd_client, AllowListValidator("stats_one, stats_two"))
-
-    def test_increment_counter_with_allowed_key(self):
-        self.stats.incr('stats_one')
-        self.statsd_client.incr.assert_called_once_with('stats_one', 1, 1)
-
-    def test_increment_counter_with_allowed_prefix(self):
-        self.stats.incr('stats_two.bla')
-        self.statsd_client.incr.assert_called_once_with('stats_two.bla', 1, 1)
-
-    def test_not_increment_counter_if_not_allowed(self):
-        self.stats.incr('stats_three')
-        self.statsd_client.assert_not_called()

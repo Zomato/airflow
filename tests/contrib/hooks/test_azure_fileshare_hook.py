@@ -22,6 +22,7 @@
 import json
 import unittest
 
+from airflow import configuration
 from airflow.contrib.hooks.azure_fileshare_hook import AzureFileShareHook
 from airflow.models import Connection
 from airflow.utils import db
@@ -31,6 +32,7 @@ from tests.compat import mock
 class TestAzureFileshareHook(unittest.TestCase):
 
     def setUp(self):
+        configuration.load_test_config()
         db.merge_conn(
             Connection(
                 conn_id='wasb_test_key', conn_type='wasb',

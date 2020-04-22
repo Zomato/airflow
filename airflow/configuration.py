@@ -36,7 +36,6 @@ import sys
 import warnings
 
 from backports.configparser import ConfigParser, _UNSET, NoOptionError, NoSectionError
-import yaml
 from zope.deprecation import deprecated
 
 from airflow.exceptions import AirflowConfigException
@@ -103,29 +102,16 @@ def _read_default_config_file(file_name):
     templates_dir = os.path.join(os.path.dirname(__file__), 'config_templates')
     file_path = os.path.join(templates_dir, file_name)
     if six.PY2:
-        with open(file_path) as file_handle:
-            config = file_handle.read()
-            return config.decode('utf-8'), file_path
+        with open(file_path) as f:
+            config = f.read()
+            return config.decode('utf-8')
     else:
-        with open(file_path, encoding='utf-8') as file_handle:
-            return file_handle.read(), file_path
+        with open(file_path, encoding='utf-8') as f:
+            return f.read()
 
 
-DEFAULT_CONFIG, DEFAULT_CONFIG_FILE_PATH = _read_default_config_file('default_airflow.cfg')
-TEST_CONFIG, TEST_CONFIG_FILE_PATH = _read_default_config_file('default_test.cfg')
-
-
-def default_config_yaml():
-    """
-    Read Airflow configs from YAML file
-
-    :return: Python dictionary containing configs & their info
-    """
-    templates_dir = os.path.join(os.path.dirname(__file__), 'config_templates')
-    file_path = os.path.join(templates_dir, "config.yml")
-
-    with open(file_path) as config_file:
-        return yaml.safe_load(config_file)
+DEFAULT_CONFIG = _read_default_config_file('default_airflow.cfg')
+TEST_CONFIG = _read_default_config_file('default_test.cfg')
 
 
 class AirflowConfigParser(ConfigParser):
@@ -137,7 +123,6 @@ class AirflowConfigParser(ConfigParser):
         ('core', 'sql_alchemy_conn'),
         ('core', 'fernet_key'),
         ('celery', 'broker_url'),
-        ('celery', 'flower_basic_auth'),
         ('celery', 'result_backend'),
         # Todo: remove this in Airflow 1.11
         ('celery', 'celery_result_backend'),
@@ -197,7 +182,7 @@ class AirflowConfigParser(ConfigParser):
 
     def _validate(self):
         if (
-                self.get("core", "executor") not in ('DebugExecutor', 'SequentialExecutor') and
+                self.get("core", "executor") != 'SequentialExecutor' and
                 "sqlite" in self.get('core', 'sql_alchemy_conn')):
             raise AirflowConfigException(
                 "error: cannot use sqlite with the {}".format(
@@ -252,12 +237,6 @@ class AirflowConfigParser(ConfigParser):
         env_var = self._env_var_name(section, key)
         if env_var in os.environ:
             return expand_env_var(os.environ[env_var])
-        # alternatively AIRFLOW__{SECTION}__{KEY}_CMD (for a command)
-        env_var_cmd = env_var + '_CMD'
-        if env_var_cmd in os.environ:
-            # if this is a valid command key...
-            if (section, key) in self.as_command_stdout:
-                return run_command(os.environ[env_var_cmd])
 
     def _get_cmd_option(self, section, key):
         fallback_key = key + '_cmd'
@@ -496,13 +475,10 @@ class AirflowConfigParser(ConfigParser):
         Note: this is not reversible.
         """
         # override any custom settings with defaults
-        log.info("Overriding settings with defaults from %s", DEFAULT_CONFIG_FILE_PATH)
         self.read_string(parameterized_config(DEFAULT_CONFIG))
         # then read test config
-        log.info("Reading default test configuration from %s", TEST_CONFIG_FILE_PATH)
         self.read_string(parameterized_config(TEST_CONFIG))
         # then read any "custom" test settings
-        log.info("Reading test configuration from %s", TEST_CONFIG_FILE)
         self.read(TEST_CONFIG_FILE)
 
     def _warn_deprecate(self, section, key, deprecated_name):
@@ -573,7 +549,6 @@ def parameterized_config(template):
     """
     Generates a configuration from the provided template + variables defined in
     current scope
-
     :param template: a config content templated with {{variables}}
     """
     all_vars = {k: v for d in [globals(), locals()] for k, v in d.items()}
@@ -664,11 +639,12 @@ if _old_config_file != AIRFLOW_CONFIG and os.path.isfile(_old_config_file):
 WEBSERVER_CONFIG = AIRFLOW_HOME + '/webserver_config.py'
 
 if conf.getboolean('webserver', 'rbac'):
+    DEFAULT_WEBSERVER_CONFIG = _read_default_config_file('default_webserver_config.py')
+
     if not os.path.isfile(WEBSERVER_CONFIG):
         log.info('Creating new FAB webserver config file in: %s', WEBSERVER_CONFIG)
-        DEFAULT_WEBSERVER_CONFIG, _ = _read_default_config_file('default_webserver_config.py')
-        with open(WEBSERVER_CONFIG, 'w') as file:
-            file.write(DEFAULT_WEBSERVER_CONFIG)
+        with open(WEBSERVER_CONFIG, 'w') as f:
+            f.write(DEFAULT_WEBSERVER_CONFIG)
 
 if conf.getboolean('core', 'unit_test_mode'):
     conf.load_test_config()
@@ -689,7 +665,7 @@ set = conf.set # noqa
 for func in [load_test_config, get, getboolean, getfloat, getint, has_option,
              remove_option, as_dict, set]:
     deprecated(
-        func.__name__,
+        func,
         "Accessing configuration method '{f.__name__}' directly from "
         "the configuration module is deprecated. Please access the "
         "configuration from the 'configuration.conf' object via "

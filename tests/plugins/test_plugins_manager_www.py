@@ -34,7 +34,6 @@ from airflow.plugins_manager import load_entrypoint_plugins, is_valid_plugin
 from airflow.sensors.base_sensor_operator import BaseSensorOperator
 from airflow.executors.base_executor import BaseExecutor
 from airflow.www.app import create_app
-
 from tests.plugins.test_plugin import MockPluginA, MockPluginB, MockPluginC
 
 

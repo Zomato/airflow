@@ -21,7 +21,7 @@
 import datetime
 import unittest
 
-from airflow import DAG
+from airflow import DAG, configuration
 from airflow.contrib.operators.spark_sql_operator import SparkSqlOperator
 
 DEFAULT_DATE = datetime.datetime(2017, 1, 1)
@@ -39,11 +39,11 @@ class TestSparkSqlOperator(unittest.TestCase):
         'master': 'yarn-client',
         'name': 'special-application-name',
         'num_executors': 8,
-        'verbose': False,
         'yarn_queue': 'special-queue'
     }
 
     def setUp(self):
+        configuration.load_test_config()
         args = {
             'owner': 'airflow',
             'start_date': DEFAULT_DATE
@@ -71,7 +71,6 @@ class TestSparkSqlOperator(unittest.TestCase):
         self.assertEqual(self._config['master'], operator._master)
         self.assertEqual(self._config['name'], operator._name)
         self.assertEqual(self._config['num_executors'], operator._num_executors)
-        self.assertEqual(self._config['verbose'], operator._verbose)
         self.assertEqual(self._config['yarn_queue'], operator._yarn_queue)
 
 

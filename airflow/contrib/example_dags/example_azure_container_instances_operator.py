@@ -16,16 +16,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-This is an example dag for using the AzureContainerInstancesOperator.
-"""
-from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.contrib.operators.azure_container_instances_operator import AzureContainerInstancesOperator
+from datetime import datetime, timedelta
 
 default_args = {
-    'owner': 'Airflow',
+    'owner': 'airflow',
     'depends_on_past': False,
     'start_date': datetime(2018, 11, 1),
     'email': ['airflow@example.com'],
@@ -35,22 +32,23 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-with DAG(
-    dag_id='aci_example',
+dag = DAG(
+    'aci_example',
     default_args=default_args,
     schedule_interval=timedelta(1)
-) as dag:
+)
 
-    t1 = AzureContainerInstancesOperator(
-        ci_conn_id='azure_container_instances_default',
-        registry_conn_id=None,
-        resource_group='resource-group',
-        name='aci-test-{{ ds }}',
-        image='hello-world',
-        region='WestUS2',
-        environment_variables={},
-        volumes=[],
-        memory_in_gb=4.0,
-        cpu=1.0,
-        task_id='start_container'
-    )
+t1 = AzureContainerInstancesOperator(
+    ci_conn_id='azure_container_instances_default',
+    registry_conn_id=None,
+    resource_group='resource-group',
+    name='aci-test-{{ ds }}',
+    image='hello-world',
+    region='WestUS2',
+    environment_variables={},
+    volumes=[],
+    memory_in_gb=4.0,
+    cpu=1.0,
+    task_id='start_container',
+    dag=dag
+)

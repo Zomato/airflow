@@ -21,12 +21,14 @@ import unittest
 import requests
 from mock import patch
 
-from airflow import DAG
+from airflow import DAG, configuration
 from airflow.exceptions import AirflowException, AirflowSensorTimeout
 from airflow.operators.http_operator import SimpleHttpOperator
 from airflow.sensors.http_sensor import HttpSensor
 from airflow.utils.timezone import datetime
 from tests.compat import mock
+
+configuration.load_test_config()
 
 DEFAULT_DATE = datetime(2015, 1, 1)
 DEFAULT_DATE_ISO = DEFAULT_DATE.isoformat()
@@ -35,6 +37,7 @@ TEST_DAG_ID = 'unit_test_dag'
 
 class HttpSensorTests(unittest.TestCase):
     def setUp(self):
+        configuration.load_test_config()
         args = {
             'owner': 'airflow',
             'start_date': DEFAULT_DATE
@@ -87,7 +90,7 @@ class HttpSensorTests(unittest.TestCase):
 
         prep_request = requests.Request(
             'HEAD',
-            'https://www.httpbin.org',
+            'https://www.google.com',
             {}).prepare()
 
         self.assertEqual(prep_request.url, received_request.url)
@@ -104,7 +107,6 @@ class HttpSensorTests(unittest.TestCase):
         response = requests.Response()
         response.status_code = 404
         response.reason = 'Not Found'
-        response._content = b'This endpoint doesnt exist'
         mock_session_send.return_value = response
 
         task = HttpSensor(
@@ -124,22 +126,7 @@ class HttpSensorTests(unittest.TestCase):
                 task.execute(None)
 
             self.assertTrue(mock_errors.called)
-
-            calls = [
-                mock.call('HTTP error: %s', 'Not Found'),
-                mock.call('This endpoint doesnt exist'),
-                mock.call('HTTP error: %s', 'Not Found'),
-                mock.call('This endpoint doesnt exist'),
-                mock.call('HTTP error: %s', 'Not Found'),
-                mock.call('This endpoint doesnt exist'),
-                mock.call('HTTP error: %s', 'Not Found'),
-                mock.call('This endpoint doesnt exist'),
-                mock.call('HTTP error: %s', 'Not Found'),
-                mock.call('This endpoint doesnt exist'),
-                mock.call('HTTP error: %s', 'Not Found'),
-                mock.call('This endpoint doesnt exist'),
-            ]
-            mock_errors.assert_has_calls(calls)
+            mock_errors.assert_called_with('HTTP error: %s', 'Not Found')
 
 
 class FakeSession(object):
@@ -161,6 +148,7 @@ class FakeSession(object):
 
 class HttpOpSensorTest(unittest.TestCase):
     def setUp(self):
+        configuration.load_test_config()
         args = {'owner': 'airflow', 'start_date': DEFAULT_DATE_ISO}
         dag = DAG(TEST_DAG_ID, default_args=args)
         self.dag = dag

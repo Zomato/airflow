@@ -22,21 +22,21 @@ import multiprocessing
 import time
 import unittest
 
-import pytest
-
 from airflow import AirflowException, models, settings
+from airflow import configuration
 from airflow.executors import SequentialExecutor
 from airflow.jobs import LocalTaskJob
 from airflow.models import DAG, TaskInstance as TI
 from airflow.operators.dummy_operator import DummyOperator
+from airflow.task.task_runner.base_task_runner import BaseTaskRunner
 from airflow.utils import timezone
-from airflow.utils.db import create_session
 from airflow.utils.net import get_hostname
 from airflow.utils.state import State
 from tests.compat import patch
-from tests.test_core import TEST_DAG_FOLDER
+from tests.core import TEST_DAG_FOLDER
 from tests.test_utils.db import clear_db_runs
-from tests.test_utils.mock_executor import MockExecutor
+
+configuration.load_test_config()
 
 DEFAULT_DATE = timezone.datetime(2016, 1, 1)
 
@@ -112,58 +112,16 @@ class LocalTaskJobTest(unittest.TestCase):
         session.merge(ti)
         session.commit()
 
-        job1.heartbeat_callback()
+        ret = job1.heartbeat_callback()
+        self.assertEqual(ret, None)
 
         mock_pid.return_value = 2
         self.assertRaises(AirflowException, job1.heartbeat_callback)
 
-    @patch('os.getpid')
-    def test_heartbeat_failed_fast(self, mock_getpid):
-        """
-        Test that task heartbeat will sleep when it fails fast
-        """
-        mock_getpid.return_value = 1
-
-        heartbeat_records = []
-
-        def heartbeat_recorder(**kwargs):
-            heartbeat_records.append(timezone.utcnow())
-
-        with create_session() as session:
-            dagbag = models.DagBag(
-                dag_folder=TEST_DAG_FOLDER,
-                include_examples=False,
-            )
-            dag_id = 'test_heartbeat_failed_fast'
-            task_id = 'test_heartbeat_failed_fast_op'
-            dag = dagbag.get_dag(dag_id)
-            task = dag.get_task(task_id)
-
-            dag.create_dagrun(run_id="test_heartbeat_failed_fast_run",
-                              state=State.RUNNING,
-                              execution_date=DEFAULT_DATE,
-                              start_date=DEFAULT_DATE,
-                              session=session)
-            ti = TI(task=task, execution_date=DEFAULT_DATE)
-            ti.refresh_from_db()
-            ti.state = State.RUNNING
-            ti.hostname = get_hostname()
-            ti.pid = 1
-            session.commit()
-
-            job = LocalTaskJob(task_instance=ti, executor=MockExecutor(do_update=False))
-            job.heartrate = 2
-            job.heartbeat_callback = heartbeat_recorder
-            job._execute()
-            self.assertGreater(len(heartbeat_records), 1)
-            for i in range(1, len(heartbeat_records)):
-                time1 = heartbeat_records[i - 1]
-                time2 = heartbeat_records[i]
-                # Assert that difference small enough
-                delta = (time2 - time1).total_seconds()
-                self.assertAlmostEqual(delta, job.heartrate, delta=0.05)
-
-    @pytest.mark.xfail(condition=True, reason="This test might be flaky in postgres/mysql")
+    @unittest.skipIf('mysql' in configuration.conf.get('core', 'sql_alchemy_conn'),
+                     "flaky when run on mysql")
+    @unittest.skipIf('postgresql' in configuration.conf.get('core', 'sql_alchemy_conn'),
+                     'flaky when run on postgresql')
     def test_mark_success_no_kill(self):
         """
         Test that ensures that mark_success in the UI doesn't cause
@@ -225,15 +183,13 @@ class LocalTaskJobTest(unittest.TestCase):
         ti.state = State.RUNNING
         ti.hostname = get_hostname()
         ti.pid = 1
-        session.merge(ti)
         session.commit()
 
         ti_run = TI(task=task, execution_date=DEFAULT_DATE)
-        ti_run.refresh_from_db()
         job1 = LocalTaskJob(task_instance=ti_run,
+                            ignore_ti_state=True,
                             executor=SequentialExecutor())
-        from airflow.task.task_runner.standard_task_runner import StandardTaskRunner
-        with patch.object(StandardTaskRunner, 'start', return_value=None) as mock_method:
+        with patch.object(BaseTaskRunner, 'start', return_value=None) as mock_method:
             job1.run()
             mock_method.assert_not_called()
 
@@ -242,111 +198,3 @@ class LocalTaskJobTest(unittest.TestCase):
         self.assertEqual(ti.state, State.RUNNING)
 
         session.close()
-
-    def test_mark_failure_on_failure_callback(self):
-        """
-        Test that ensures that mark_failure in the UI fails
-        the task, and executes on_failure_callback
-        """
-        data = {'called': False}
-
-        def check_failure(context):
-            self.assertEqual(context['dag_run'].dag_id,
-                             'test_mark_failure')
-            data['called'] = True
-
-        dag = DAG(dag_id='test_mark_failure',
-                  start_date=DEFAULT_DATE,
-                  default_args={'owner': 'owner1'})
-
-        task = DummyOperator(
-            task_id='test_state_succeeded1',
-            dag=dag,
-            on_failure_callback=check_failure)
-
-        session = settings.Session()
-
-        dag.clear()
-        dag.create_dagrun(run_id="test",
-                          state=State.RUNNING,
-                          execution_date=DEFAULT_DATE,
-                          start_date=DEFAULT_DATE,
-                          session=session)
-        ti = TI(task=task, execution_date=DEFAULT_DATE)
-        ti.refresh_from_db()
-        job1 = LocalTaskJob(task_instance=ti,
-                            ignore_ti_state=True,
-                            executor=SequentialExecutor())
-        from airflow.task.task_runner.standard_task_runner import StandardTaskRunner
-        job1.task_runner = StandardTaskRunner(job1)
-        process = multiprocessing.Process(target=job1.run)
-        process.start()
-        ti.refresh_from_db()
-        for _ in range(0, 50):
-            if ti.state == State.RUNNING:
-                break
-            time.sleep(0.1)
-            ti.refresh_from_db()
-        self.assertEqual(State.RUNNING, ti.state)
-        ti.state = State.FAILED
-        session.merge(ti)
-        session.commit()
-
-        job1.heartbeat_callback(session=None)
-        self.assertTrue(data['called'])
-        process.join(timeout=10)
-        self.assertFalse(process.is_alive())
-
-    def test_mark_success_on_success_callback(self):
-        """
-        Test that ensures that where a task is marked suceess in the UI
-        on_success_callback gets executed
-        """
-        data = {'called': False}
-
-        def success_callback(context):
-            self.assertEqual(context['dag_run'].dag_id,
-                             'test_mark_success')
-            data['called'] = True
-
-        dag = DAG(dag_id='test_mark_success',
-                  start_date=DEFAULT_DATE,
-                  default_args={'owner': 'owner1'})
-
-        task = DummyOperator(
-            task_id='test_state_succeeded1',
-            dag=dag,
-            on_success_callback=success_callback)
-
-        session = settings.Session()
-
-        dag.clear()
-        dag.create_dagrun(run_id="test",
-                          state=State.RUNNING,
-                          execution_date=DEFAULT_DATE,
-                          start_date=DEFAULT_DATE,
-                          session=session)
-        ti = TI(task=task, execution_date=DEFAULT_DATE)
-        ti.refresh_from_db()
-        job1 = LocalTaskJob(task_instance=ti,
-                            ignore_ti_state=True,
-                            executor=SequentialExecutor())
-        from airflow.task.task_runner.standard_task_runner import StandardTaskRunner
-        job1.task_runner = StandardTaskRunner(job1)
-        process = multiprocessing.Process(target=job1.run)
-        process.start()
-        ti.refresh_from_db()
-        for _ in range(0, 50):
-            if ti.state == State.RUNNING:
-                break
-            time.sleep(0.1)
-            ti.refresh_from_db()
-        self.assertEqual(State.RUNNING, ti.state)
-        ti.state = State.SUCCESS
-        session.merge(ti)
-        session.commit()
-
-        job1.heartbeat_callback(session=None)
-        self.assertTrue(data['called'])
-        process.join(timeout=10)
-        self.assertFalse(process.is_alive())

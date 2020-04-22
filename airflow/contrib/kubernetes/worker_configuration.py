@@ -22,7 +22,6 @@ from airflow.configuration import conf
 from airflow.contrib.kubernetes.pod import Pod, Resources
 from airflow.contrib.kubernetes.secret import Secret
 from airflow.utils.log.logging_mixin import LoggingMixin
-from airflow.version import version as airflow_version
 
 
 class WorkerConfiguration(LoggingMixin):
@@ -69,17 +68,7 @@ class WorkerConfiguration(LoggingMixin):
         }, {
             'name': 'GIT_SYNC_ONE_TIME',
             'value': 'true'
-        }, {
-            'name': 'GIT_SYNC_REV',
-            'value': self.kube_config.git_sync_rev
         }]
-
-        for env_var_name, env_var_val in six.iteritems(self.kube_config.kube_env_vars):
-            init_environment.append({
-                'name': env_var_name,
-                'value': env_var_val
-            })
-
         if self.kube_config.git_user:
             init_environment.append({
                 'name': 'GIT_SYNC_USERNAME',
@@ -322,33 +311,6 @@ class WorkerConfiguration(LoggingMixin):
                 'mode': 0o440
             }
 
-        if self.kube_config.airflow_local_settings_configmap:
-            config_path = '{}/config/airflow_local_settings.py'.format(self.worker_airflow_home)
-
-            if self.kube_config.airflow_local_settings_configmap != self.kube_config.airflow_configmap:
-                config_volume_name = 'airflow-local-settings'
-                volumes[config_volume_name] = {
-                    'name': config_volume_name,
-                    'configMap': {
-                        'name': self.kube_config.airflow_local_settings_configmap
-                    }
-                }
-
-                volume_mounts[config_volume_name] = {
-                    'name': config_volume_name,
-                    'mountPath': config_path,
-                    'subPath': 'airflow_local_settings.py',
-                    'readOnly': True
-                }
-
-            else:
-                volume_mounts['airflow-local-settings'] = {
-                    'name': 'airflow-config',
-                    'mountPath': config_path,
-                    'subPath': 'airflow_local_settings.py',
-                    'readOnly': True
-                }
-
         # Mount the airflow.cfg file via a configmap the user has specified
         if self.kube_config.airflow_configmap:
             config_volume_name = 'airflow-config'
@@ -411,8 +373,6 @@ class WorkerConfiguration(LoggingMixin):
                 'task_id': task_id,
                 'execution_date': execution_date,
                 'try_number': str(try_number),
-                'airflow_version': airflow_version.replace('+', '-'),
-                'kubernetes_executor': 'True',
             }),
             envs=self._get_environment(),
             secrets=self._get_secrets(),

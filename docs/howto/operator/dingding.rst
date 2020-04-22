@@ -39,7 +39,6 @@ to send Dingding message:
 
 .. exampleinclude:: ../../../airflow/contrib/example_dags/example_dingding_operator.py
     :language: python
-    :dedent: 4
     :start-after: [START howto_operator_dingding]
     :end-before: [END howto_operator_dingding]
 
@@ -52,7 +51,6 @@ Use parameters ``at_mobiles`` and ``at_all`` to remind specific users when you s
 
 .. exampleinclude:: ../../../airflow/contrib/example_dags/example_dingding_operator.py
     :language: python
-    :dedent: 4
     :start-after: [START howto_operator_dingding_remind_users]
     :end-before: [END howto_operator_dingding_remind_users]
 
@@ -65,7 +63,6 @@ A rich text message can not remind specific users except by using markdown type 
 
 .. exampleinclude:: ../../../airflow/contrib/example_dags/example_dingding_operator.py
     :language: python
-    :dedent: 4
     :start-after: [START howto_operator_dingding_rich_text]
     :end-before: [END howto_operator_dingding_rich_text]
 

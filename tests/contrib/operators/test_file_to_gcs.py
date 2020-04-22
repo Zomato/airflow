@@ -21,7 +21,7 @@
 import datetime
 import unittest
 
-from airflow import DAG
+from airflow import DAG, configuration
 from airflow.contrib.operators.file_to_gcs import FileToGoogleCloudStorageOperator
 from tests.compat import mock
 
@@ -37,6 +37,7 @@ class TestFileToGcsOperator(unittest.TestCase):
     }
 
     def setUp(self):
+        configuration.load_test_config()
         args = {
             'owner': 'airflow',
             'start_date': datetime.datetime(2017, 1, 1)

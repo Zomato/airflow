@@ -27,9 +27,10 @@ from time import sleep
 
 from sqlalchemy import Column, Index, Integer, String, and_, or_
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm.session import make_transient
+from sqlalchemy.orm.session import make_transient, Session
+from typing import Optional
 
-from airflow.configuration import conf
+from airflow import configuration as conf
 from airflow import executors, models
 from airflow.exceptions import (
     AirflowException,
@@ -38,7 +39,6 @@ from airflow.models.base import Base, ID_LEN
 from airflow.settings import Stats
 from airflow.utils import helpers, timezone
 from airflow.utils.db import create_session, provide_session
-from airflow.utils.helpers import convert_camel_to_snake
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.net import get_hostname
 from airflow.utils.sqlalchemy import UtcDateTime
@@ -79,11 +79,11 @@ class BaseJob(Base, LoggingMixin):
 
     def __init__(
             self,
-            executor=None,
+            executor=executors.get_default_executor(),
             heartrate=None,
             *args, **kwargs):
         self.hostname = get_hostname()
-        self.executor = executor or executors.get_default_executor()
+        self.executor = executor
         self.executor_class = executor.__class__.__name__
         self.start_date = timezone.utcnow()
         self.latest_heartbeat = timezone.utcnow()
@@ -95,7 +95,7 @@ class BaseJob(Base, LoggingMixin):
 
     @classmethod
     @provide_session
-    def most_recent_job(cls, session=None):
+    def most_recent_job(cls, session):  # type: (Session) -> Optional[BaseJob]
         """
         Return the most recent job of this type, if any, based on last
         heartbeat received.
@@ -121,8 +121,8 @@ class BaseJob(Base, LoggingMixin):
         :rtype: boolean
         """
         return (
-            self.state == State.RUNNING and
-            (timezone.utcnow() - self.latest_heartbeat).total_seconds() < self.heartrate * grace_multiplier
+            (timezone.utcnow() - self.latest_heartbeat).seconds <
+            (conf.getint('scheduler', 'JOB_HEARTBEAT_SEC') * 2.1)
         )
 
     @provide_session
@@ -141,6 +141,7 @@ class BaseJob(Base, LoggingMixin):
         """
         Will be called when an external kill command is received
         """
+        pass
 
     def heartbeat_callback(self, session=None):
         pass
@@ -164,24 +165,22 @@ class BaseJob(Base, LoggingMixin):
         heart rate. If you go over 60 seconds before calling it, it won't
         sleep at all.
         """
-        previous_heartbeat = self.latest_heartbeat
-
         try:
             with create_session() as session:
-                # This will cause it to load from the db
-                session.merge(self)
-                previous_heartbeat = self.latest_heartbeat
+                job = session.query(BaseJob).filter_by(id=self.id).one()
+                make_transient(job)
+                session.commit()
 
-            if self.state == State.SHUTDOWN:
+            if job.state == State.SHUTDOWN:
                 self.kill()
 
             is_unit_test = conf.getboolean('core', 'unit_test_mode')
             if not is_unit_test:
                 # Figure out how long to sleep for
                 sleep_for = 0
-                if self.latest_heartbeat:
+                if job.latest_heartbeat:
                     seconds_remaining = self.heartrate - \
-                        (timezone.utcnow() - self.latest_heartbeat)\
+                        (timezone.utcnow() - job.latest_heartbeat)\
                         .total_seconds()
                     sleep_for = max(0, seconds_remaining)
 
@@ -189,22 +188,15 @@ class BaseJob(Base, LoggingMixin):
 
             # Update last heartbeat time
             with create_session() as session:
-                # Make the sesion aware of this object
-                session.merge(self)
-                self.latest_heartbeat = timezone.utcnow()
+                job = session.query(BaseJob).filter(BaseJob.id == self.id).first()
+                job.latest_heartbeat = timezone.utcnow()
+                session.merge(job)
                 session.commit()
-                # At this point, the DB has updated.
-                previous_heartbeat = self.latest_heartbeat
 
                 self.heartbeat_callback(session=session)
                 self.log.debug('[heartbeat]')
-        except OperationalError:
-            Stats.incr(
-                convert_camel_to_snake(self.__class__.__name__) + '_heartbeat_failure', 1,
-                1)
-            self.log.exception("%s heartbeat got an exception", self.__class__.__name__)
-            # We didn't manage to heartbeat, so make sure that the timestamp isn't updated
-            self.latest_heartbeat = previous_heartbeat
+        except OperationalError as e:
+            self.log.error("Scheduler heartbeat got an exception: %s", str(e))
 
     def run(self):
         Stats.incr(self.__class__.__name__.lower() + '_start', 1, 1)

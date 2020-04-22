@@ -19,6 +19,7 @@
 
 import unittest
 
+from airflow import configuration
 from airflow.contrib.sensors.sagemaker_transform_sensor \
     import SageMakerTransformSensor
 from airflow.contrib.hooks.sagemaker_hook import SageMakerHook
@@ -53,6 +54,9 @@ DESCRIBE_TRANSFORM_STOPPING_RESPONSE = {
 
 
 class TestSageMakerTransformSensor(unittest.TestCase):
+    def setUp(self):
+        configuration.load_test_config()
+
     @mock.patch.object(SageMakerHook, 'get_conn')
     @mock.patch.object(SageMakerHook, 'describe_transform_job')
     def test_sensor_with_failure(self, mock_describe_job, mock_client):

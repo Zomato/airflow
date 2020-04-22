@@ -17,25 +17,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""
-This module contains AWS SNS hook
-"""
 import json
 
 from airflow.contrib.hooks.aws_hook import AwsHook
-
-
-def _get_message_attribute(o):
-    if isinstance(o, bytes):
-        return {'DataType': 'Binary', 'BinaryValue': o}
-    if isinstance(o, str):
-        return {'DataType': 'String', 'StringValue': o}
-    if isinstance(o, (int, float)):
-        return {'DataType': 'Number', 'StringValue': str(o)}
-    if hasattr(o, '__iter__'):
-        return {'DataType': 'String.Array', 'StringValue': json.dumps(o)}
-    raise TypeError('Values in MessageAttributes must be one of bytes, str, int, float, or iterable; '
-                    'got {}'.format(type(o)))
 
 
 class AwsSnsHook(AwsHook):
@@ -44,7 +28,6 @@ class AwsSnsHook(AwsHook):
     """
 
     def __init__(self, *args, **kwargs):
-        self.conn = None
         super(AwsSnsHook, self).__init__(*args, **kwargs)
 
     def get_conn(self):
@@ -54,7 +37,7 @@ class AwsSnsHook(AwsHook):
         self.conn = self.get_client_type('sns')
         return self.conn
 
-    def publish_to_target(self, target_arn, message, subject=None, message_attributes=None):
+    def publish_to_target(self, target_arn, message):
         """
         Publish a message to a topic or an endpoint.
 
@@ -62,34 +45,16 @@ class AwsSnsHook(AwsHook):
         :type target_arn: str
         :param message: the default message you want to send
         :param message: str
-        :param subject: subject of message
-        :type subject: str
-        :param message_attributes: additional attributes to publish for message filtering. This should be
-            a flat dict; the DataType to be sent depends on the type of the value:
-
-            - bytes = Binary
-            - str = String
-            - int, float = Number
-            - iterable = String.Array
-        :type message_attributes: dict
         """
 
         conn = self.get_conn()
 
-        publish_kwargs = {
-            'TargetArn': target_arn,
-            'MessageStructure': 'json',
-            'Message': json.dumps({
-                'default': message
-            }),
+        messages = {
+            'default': message
         }
 
-        # Construct args this way because boto3 distinguishes from missing args and those set to None
-        if subject:
-            publish_kwargs['Subject'] = subject
-        if message_attributes:
-            publish_kwargs['MessageAttributes'] = {
-                key: _get_message_attribute(val) for key, val in message_attributes.items()
-            }
-
-        return conn.publish(**publish_kwargs)
+        return conn.publish(
+            TargetArn=target_arn,
+            Message=json.dumps(messages),
+            MessageStructure='json'
+        )
