@@ -184,9 +184,11 @@ class BigQueryConnection(object):
 
     def close(self):
         """ BigQueryConnection does not have anything to close. """
+        pass
 
     def commit(self):
         """ BigQueryConnection does not support transactions. """
+        pass
 
     def cursor(self):
         """ Return a new :py:class:`Cursor` object using the connection. """
@@ -350,7 +352,6 @@ class BigQueryBaseCursor(LoggingMixin):
                               quote_character=None,
                               allow_quoted_newlines=False,
                               allow_jagged_rows=False,
-                              encoding="UTF-8",
                               src_fmt_configs=None,
                               labels=None,
                               encryption_configuration=None
@@ -412,11 +413,6 @@ class BigQueryBaseCursor(LoggingMixin):
             records, an invalid error is returned in the job result. Only applicable when
             soure_format is CSV.
         :type allow_jagged_rows: bool
-        :param encoding: The character encoding of the data. See:
-
-            .. seealso::
-                https://cloud.google.com/bigquery/docs/reference/rest/v2/tables#externalDataConfiguration.csvOptions.encoding
-        :type encoding: str
         :param src_fmt_configs: configure optional fields specific to the source format
         :type src_fmt_configs: dict
         :param labels: a dictionary containing labels for the table, passed to BigQuery
@@ -489,12 +485,16 @@ class BigQueryBaseCursor(LoggingMixin):
 
         # if following fields are not specified in src_fmt_configs,
         # honor the top-level params for backward-compatibility
-        backward_compatibility_configs = {'skipLeadingRows': skip_leading_rows,
-                                          'fieldDelimiter': field_delimiter,
-                                          'quote': quote_character,
-                                          'allowQuotedNewlines': allow_quoted_newlines,
-                                          'allowJaggedRows': allow_jagged_rows,
-                                          'encoding': encoding}
+        if 'skipLeadingRows' not in src_fmt_configs:
+            src_fmt_configs['skipLeadingRows'] = skip_leading_rows
+        if 'fieldDelimiter' not in src_fmt_configs:
+            src_fmt_configs['fieldDelimiter'] = field_delimiter
+        if 'quote_character' not in src_fmt_configs:
+            src_fmt_configs['quote'] = quote_character
+        if 'allowQuotedNewlines' not in src_fmt_configs:
+            src_fmt_configs['allowQuotedNewlines'] = allow_quoted_newlines
+        if 'allowJaggedRows' not in src_fmt_configs:
+            src_fmt_configs['allowJaggedRows'] = allow_jagged_rows
 
         src_fmt_to_param_mapping = {
             'CSV': 'csvOptions',
@@ -505,18 +505,21 @@ class BigQueryBaseCursor(LoggingMixin):
             'csvOptions': [
                 'allowJaggedRows', 'allowQuotedNewlines',
                 'fieldDelimiter', 'skipLeadingRows',
-                'quote', 'encoding'
+                'quote'
             ],
             'googleSheetsOptions': ['skipLeadingRows']
         }
 
         if source_format in src_fmt_to_param_mapping.keys():
+
             valid_configs = src_fmt_to_configs_mapping[
                 src_fmt_to_param_mapping[source_format]
             ]
 
-            src_fmt_configs = _validate_src_fmt_configs(source_format, src_fmt_configs, valid_configs,
-                                                        backward_compatibility_configs)
+            src_fmt_configs = {
+                k: v
+                for k, v in src_fmt_configs.items() if k in valid_configs
+            }
 
             table_resource['externalDataConfiguration'][src_fmt_to_param_mapping[
                 source_format]] = src_fmt_configs
@@ -1077,7 +1080,6 @@ class BigQueryBaseCursor(LoggingMixin):
                  ignore_unknown_values=False,
                  allow_quoted_newlines=False,
                  allow_jagged_rows=False,
-                 encoding="UTF-8",
                  schema_update_options=None,
                  src_fmt_configs=None,
                  time_partitioning=None,
@@ -1141,11 +1143,6 @@ class BigQueryBaseCursor(LoggingMixin):
             records, an invalid error is returned in the job result. Only applicable when
             soure_format is CSV.
         :type allow_jagged_rows: bool
-        :param encoding: The character encoding of the data.
-
-            .. seealso::
-                https://cloud.google.com/bigquery/docs/reference/rest/v2/tables#externalDataConfiguration.csvOptions.encoding
-        :type encoding: str
         :param schema_update_options: Allows the schema of the destination
             table to be updated as a side effect of the load job.
         :type schema_update_options: Union[list, tuple, set]
@@ -1263,32 +1260,35 @@ class BigQueryBaseCursor(LoggingMixin):
                 "destinationEncryptionConfiguration"
             ] = encryption_configuration
 
+        # if following fields are not specified in src_fmt_configs,
+        # honor the top-level params for backward-compatibility
+        if 'skipLeadingRows' not in src_fmt_configs:
+            src_fmt_configs['skipLeadingRows'] = skip_leading_rows
+        if 'fieldDelimiter' not in src_fmt_configs:
+            src_fmt_configs['fieldDelimiter'] = field_delimiter
+        if 'ignoreUnknownValues' not in src_fmt_configs:
+            src_fmt_configs['ignoreUnknownValues'] = ignore_unknown_values
+        if quote_character is not None:
+            src_fmt_configs['quote'] = quote_character
+        if allow_quoted_newlines:
+            src_fmt_configs['allowQuotedNewlines'] = allow_quoted_newlines
+
         src_fmt_to_configs_mapping = {
             'CSV': [
                 'allowJaggedRows', 'allowQuotedNewlines', 'autodetect',
                 'fieldDelimiter', 'skipLeadingRows', 'ignoreUnknownValues',
-                'nullMarker', 'quote', 'encoding'
+                'nullMarker', 'quote'
             ],
             'DATASTORE_BACKUP': ['projectionFields'],
             'NEWLINE_DELIMITED_JSON': ['autodetect', 'ignoreUnknownValues'],
             'PARQUET': ['autodetect', 'ignoreUnknownValues'],
             'AVRO': ['useAvroLogicalTypes'],
         }
-
         valid_configs = src_fmt_to_configs_mapping[source_format]
-
-        # if following fields are not specified in src_fmt_configs,
-        # honor the top-level params for backward-compatibility
-        backward_compatibility_configs = {'skipLeadingRows': skip_leading_rows,
-                                          'fieldDelimiter': field_delimiter,
-                                          'ignoreUnknownValues': ignore_unknown_values,
-                                          'quote': quote_character,
-                                          'allowQuotedNewlines': allow_quoted_newlines,
-                                          'encoding': encoding}
-
-        src_fmt_configs = _validate_src_fmt_configs(source_format, src_fmt_configs, valid_configs,
-                                                    backward_compatibility_configs)
-
+        src_fmt_configs = {
+            k: v
+            for k, v in src_fmt_configs.items() if k in valid_configs
+        }
         configuration['load'].update(src_fmt_configs)
 
         if allow_jagged_rows:
@@ -1685,19 +1685,13 @@ class BigQueryBaseCursor(LoggingMixin):
                 'BigQuery job failed. Error was: {}'.format(err.content)
             )
 
-    def delete_dataset(self, project_id, dataset_id, delete_contents=False):
+    def delete_dataset(self, project_id, dataset_id):
         """
         Delete a dataset of Big query in your project.
-
         :param project_id: The name of the project where we have the dataset .
         :type project_id: str
         :param dataset_id: The dataset to be delete.
         :type dataset_id: str
-        :param delete_contents: [Optional] Whether to force the deletion even if the dataset is not empty.
-            Will delete all tables (if any) in the dataset if set to True.
-            Will raise HttpError 400: "{dataset_id} is still in use" if set to False and dataset is not empty.
-            The default value is False.
-        :type delete_contents: bool
         :return:
         """
         project_id = project_id if project_id is not None else self.project_id
@@ -1707,8 +1701,7 @@ class BigQueryBaseCursor(LoggingMixin):
         try:
             self.service.datasets().delete(
                 projectId=project_id,
-                datasetId=dataset_id,
-                deleteContents=delete_contents).execute(num_retries=self.num_retries)
+                datasetId=dataset_id).execute(num_retries=self.num_retries)
             self.log.info('Dataset deleted successfully: In project %s '
                           'Dataset %s', project_id, dataset_id)
 
@@ -1796,97 +1789,6 @@ class BigQueryBaseCursor(LoggingMixin):
                 'BigQuery job failed. Error was: {}'.format(err.content))
 
         return datasets_list
-
-    def patch_dataset(self, dataset_id, dataset_resource, project_id=None):
-        """
-        Patches information in an existing dataset.
-        It only replaces fields that are provided in the submitted dataset resource.
-        More info:
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets/patch
-
-        :param dataset_id: The BigQuery Dataset ID
-        :type dataset_id: str
-        :param dataset_resource: Dataset resource that will be provided
-            in request body.
-            https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-        :type dataset_resource: dict
-        :param project_id: The GCP Project ID
-        :type project_id: str
-        :rtype: dataset
-            https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-        """
-
-        if not dataset_id or not isinstance(dataset_id, str):
-            raise ValueError(
-                "dataset_id argument must be provided and has "
-                "a type 'str'. You provided: {}".format(dataset_id)
-            )
-
-        dataset_project_id = project_id if project_id else self.project_id
-
-        try:
-            dataset = (
-                self.service.datasets()
-                .patch(
-                    datasetId=dataset_id,
-                    projectId=dataset_project_id,
-                    body=dataset_resource,
-                )
-                .execute(num_retries=self.num_retries)
-            )
-            self.log.info("Dataset successfully patched: %s", dataset)
-        except HttpError as err:
-            raise AirflowException(
-                "BigQuery job failed. Error was: {}".format(err.content)
-            )
-
-        return dataset
-
-    def update_dataset(self, dataset_id, dataset_resource, project_id=None):
-        """
-        Updates information in an existing dataset. The update method replaces the entire
-        dataset resource, whereas the patch method only replaces fields that are provided
-        in the submitted dataset resource.
-        More info:
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets/update
-
-        :param dataset_id: The BigQuery Dataset ID
-        :type dataset_id: str
-        :param dataset_resource: Dataset resource that will be provided
-            in request body.
-            https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-        :type dataset_resource: dict
-        :param project_id: The GCP Project ID
-        :type project_id: str
-        :rtype: dataset
-            https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-        """
-
-        if not dataset_id or not isinstance(dataset_id, str):
-            raise ValueError(
-                "dataset_id argument must be provided and has "
-                "a type 'str'. You provided: {}".format(dataset_id)
-            )
-
-        dataset_project_id = project_id if project_id else self.project_id
-
-        try:
-            dataset = (
-                self.service.datasets()
-                .update(
-                    datasetId=dataset_id,
-                    projectId=dataset_project_id,
-                    body=dataset_resource,
-                )
-                .execute(num_retries=self.num_retries)
-            )
-            self.log.info("Dataset successfully updated: %s", dataset)
-        except HttpError as err:
-            raise AirflowException(
-                "BigQuery job failed. Error was: {}".format(err.content)
-            )
-
-        return dataset
 
     def insert_all(self, project_id, dataset_id, table_id,
                    rows, ignore_unknown_values=False,
@@ -1995,6 +1897,7 @@ class BigQueryCursor(BigQueryBaseCursor):
 
     def close(self):
         """ By default, do nothing """
+        pass
 
     @property
     def rowcount(self):
@@ -2026,13 +1929,6 @@ class BigQueryCursor(BigQueryBaseCursor):
         """
         for parameters in seq_of_parameters:
             self.execute(operation, parameters)
-
-    def flush_results(self):
-        """ Flush results related cursor attributes. """
-        self.page_token = None
-        self.job_id = None
-        self.all_pages_loaded = False
-        self.buffer = []
 
     def fetchone(self):
         """ Fetch the next row of a query result set. """
@@ -2074,7 +1970,9 @@ class BigQueryCursor(BigQueryBaseCursor):
 
             else:
                 # Reset all state since we've exhausted the results.
-                self.flush_results()
+                self.page_token = None
+                self.job_id = None
+                self.page_token = None
                 return None
 
         return self.buffer.pop(0)
@@ -2128,9 +2026,11 @@ class BigQueryCursor(BigQueryBaseCursor):
 
     def setinputsizes(self, sizes):
         """ Does nothing by default """
+        pass
 
     def setoutputsize(self, size, column=None):
         """ Does nothing by default """
+        pass
 
 
 def _bind_parameters(operation, parameters):
@@ -2272,34 +2172,3 @@ def _api_resource_configs_duplication_check(key, value, config_dict,
                          "in `query` config and {param_name} was also provided "
                          "with arg to run_query() method. Please remove duplicates."
                          .format(param_name=key, dict_name=config_dict_name))
-
-
-def _validate_src_fmt_configs(source_format, src_fmt_configs, valid_configs,
-                              backward_compatibility_configs=None):
-    """
-    Validates the given src_fmt_configs against a valid configuration for the source format.
-    Adds the backward compatiblity config to the src_fmt_configs.
-
-    :param source_format: File format to export.
-    :type source_format: str
-    :param src_fmt_configs: Configure optional fields specific to the source format.
-    :type src_fmt_configs: dict
-    :param valid_configs: Valid configuration specific to the source format
-    :type valid_configs: List[str]
-    :param backward_compatibility_configs: The top-level params for backward-compatibility
-    :type backward_compatibility_configs: dict
-    """
-
-    if backward_compatibility_configs is None:
-        backward_compatibility_configs = {}
-
-    for k, v in backward_compatibility_configs.items():
-        if k not in src_fmt_configs and k in valid_configs:
-            src_fmt_configs[k] = v
-
-    for k, v in src_fmt_configs.items():
-        if k not in valid_configs:
-            raise ValueError("{0} is not a valid src_fmt_configs for type {1}."
-                             .format(k, source_format))
-
-    return src_fmt_configs

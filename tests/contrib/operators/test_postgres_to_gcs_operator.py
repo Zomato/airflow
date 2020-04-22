@@ -24,8 +24,6 @@ from __future__ import unicode_literals
 
 import unittest
 
-import pytest
-
 from airflow.hooks.postgres_hook import PostgresHook
 from airflow.contrib.operators.postgres_to_gcs_operator import \
     PostgresToGoogleCloudStorageOperator
@@ -49,8 +47,7 @@ SCHEMA_JSON = b'[{"mode": "NULLABLE", "name": "some_str", "type": "STRING"}, ' \
               b'{"mode": "NULLABLE", "name": "some_num", "type": "INTEGER"}]'
 
 
-@pytest.mark.backend("postgres")
-class TestPostgresToGoogleCloudStorageOperator(unittest.TestCase):
+class PostgresToGoogleCloudStorageOperatorTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         postgres = PostgresHook()

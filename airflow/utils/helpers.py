@@ -33,27 +33,23 @@ from builtins import input
 from past.builtins import basestring
 from datetime import datetime
 from functools import reduce
-try:
-    from collections.abc import Iterable
-except ImportError:
-    from collections import Iterable
+from collections import Iterable
 import os
 import re
 import signal
-import subprocess
 
 from jinja2 import Template
 
-from airflow.configuration import conf
+from airflow import configuration
 from airflow.exceptions import AirflowException
 
 # When killing processes, time to wait after issuing a SIGTERM before issuing a
 # SIGKILL.
-DEFAULT_TIME_TO_WAIT_AFTER_SIGTERM = conf.getint(
+DEFAULT_TIME_TO_WAIT_AFTER_SIGTERM = configuration.conf.getint(
     'core', 'KILLED_TASK_CLEANUP_TIME'
 )
 
-KEY_REGEX = re.compile(r'^[\w.-]+$')
+KEY_REGEX = re.compile(r'^[\w\-\.]+$')
 
 
 def validate_key(k, max_length=250):
@@ -272,82 +268,67 @@ def pprinttable(rows):
     return s
 
 
-def reap_process_group(pgid, log, sig=signal.SIGTERM,
+def reap_process_group(pid, log, sig=signal.SIGTERM,
                        timeout=DEFAULT_TIME_TO_WAIT_AFTER_SIGTERM):
     """
-    Tries really hard to terminate all processes in the group (including grandchildren). Will send
+    Tries really hard to terminate all children (including grandchildren). Will send
     sig (SIGTERM) to the process group of pid. If any process is alive after timeout
     a SIGKILL will be send.
 
     :param log: log handler
-    :param pgid: process group id to kill
+    :param pid: pid to kill
     :param sig: signal type
     :param timeout: how much time a process has to terminate
     """
 
-    returncodes = {}
-
     def on_terminate(p):
         log.info("Process %s (%s) terminated with exit code %s", p, p.pid, p.returncode)
-        returncodes[p.pid] = p.returncode
 
-    def signal_procs(sig):
-        try:
-            os.killpg(pgid, sig)
-        except OSError as err:
-            # If operation not permitted error is thrown due to run_as_user,
-            # use sudo -n(--non-interactive) to kill the process
-            if err.errno == errno.EPERM:
-                subprocess.check_call(
-                    ["sudo", "-n", "kill", "-" + str(sig)] + [str(p.pid) for p in children]
-                )
-            else:
-                raise
-
-    if pgid == os.getpgid(0):
+    if pid == os.getpid():
         raise RuntimeError("I refuse to kill myself")
 
     try:
-        parent = psutil.Process(pgid)
-
-        children = parent.children(recursive=True)
-        children.append(parent)
+        parent = psutil.Process(pid)
     except psutil.NoSuchProcess:
-        # The process already exited, but maybe it's children haven't.
-        children = []
-        for p in psutil.process_iter():
-            try:
-                if os.getpgid(p.pid) == pgid and p.pid != 0:
-                    children.append(p)
-            except OSError:
-                pass
+        # Race condition - the process already exited
+        return
 
-    log.info("Sending %s to GPID %s", sig, pgid)
+    children = parent.children(recursive=True)
+    children.append(parent)
+
     try:
-        signal_procs(sig)
+        pg = os.getpgid(pid)
     except OSError as err:
-        # No such process, which means there is no such process group - our job
-        # is done
+        # Skip if not such process - we experience a race and it just terminated
         if err.errno == errno.ESRCH:
-            return returncodes
+            return
+        raise
+
+    log.info("Sending %s to GPID %s", sig, pg)
+    try:
+        os.killpg(os.getpgid(pid), sig)
+    except OSError as err:
+        if err.errno == errno.ESRCH:
+            return
+        raise
 
     gone, alive = psutil.wait_procs(children, timeout=timeout, callback=on_terminate)
 
     if alive:
         for p in alive:
-            log.warning("process %s did not respond to SIGTERM. Trying SIGKILL", p)
+            log.warning("process %s (%s) did not respond to SIGTERM. Trying SIGKILL", p, pid)
 
         try:
-            signal_procs(signal.SIGKILL)
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
         except OSError as err:
-            if err.errno != errno.ESRCH:
-                raise
+            if err.errno == errno.ESRCH:
+                return
+            raise
 
-        _, alive = psutil.wait_procs(alive, timeout=timeout, callback=on_terminate)
+        gone, alive = psutil.wait_procs(alive, timeout=timeout, callback=on_terminate)
         if alive:
             for p in alive:
                 log.error("Process %s (%s) could not be killed. Giving up.", p, p.pid)
-    return returncodes
 
 
 def parse_template_string(template_string):
@@ -490,7 +471,3 @@ def render_log_filename(ti, try_number, filename_template):
                                     task_id=ti.task_id,
                                     execution_date=ti.execution_date.isoformat(),
                                     try_number=try_number)
-
-
-def convert_camel_to_snake(camel_str):
-    return re.sub('(?!^)([A-Z]+)', r'_\1', camel_str).lower()

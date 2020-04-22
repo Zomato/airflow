@@ -19,7 +19,7 @@
 
 
 import unittest
-from airflow import DAG
+from airflow import DAG, configuration
 from airflow.contrib.operators.aws_sqs_publish_operator import SQSPublishOperator
 from airflow.utils import timezone
 from mock import MagicMock
@@ -32,6 +32,8 @@ DEFAULT_DATE = timezone.datetime(2019, 1, 1)
 class TestSQSPublishOperator(unittest.TestCase):
 
     def setUp(self):
+        configuration.load_test_config()
+
         args = {
             'owner': 'airflow',
             'start_date': DEFAULT_DATE

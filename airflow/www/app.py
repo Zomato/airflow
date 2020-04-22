@@ -29,8 +29,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 import airflow
-from airflow import models, version, LoggingMixin
-from airflow.configuration import conf
+from airflow import configuration as conf
+from airflow import models, LoggingMixin
 from airflow.models.connection import Connection
 from airflow.settings import Session
 
@@ -38,6 +38,7 @@ from airflow.www.blueprints import routes
 from airflow.logging_config import configure_logging
 from airflow import jobs
 from airflow import settings
+from airflow import configuration
 from airflow.utils.net import get_hostname
 
 csrf = CSRFProtect()
@@ -45,17 +46,18 @@ csrf = CSRFProtect()
 
 def create_app(config=None, testing=False):
     app = Flask(__name__)
-    if conf.getboolean('webserver', 'ENABLE_PROXY_FIX'):
+    if configuration.conf.getboolean('webserver', 'ENABLE_PROXY_FIX'):
         app.wsgi_app = ProxyFix(
             app.wsgi_app,
-            x_for=conf.getint("webserver", "PROXY_FIX_X_FOR", fallback=1),
-            x_proto=conf.getint("webserver", "PROXY_FIX_X_PROTO", fallback=1),
-            x_host=conf.getint("webserver", "PROXY_FIX_X_HOST", fallback=1),
-            x_port=conf.getint("webserver", "PROXY_FIX_X_PORT", fallback=1),
-            x_prefix=conf.getint("webserver", "PROXY_FIX_X_PREFIX", fallback=1)
+            num_proxies=None,
+            x_for=1,
+            x_proto=1,
+            x_host=1,
+            x_port=1,
+            x_prefix=1
         )
-    app.secret_key = conf.get('webserver', 'SECRET_KEY')
-    app.config['LOGIN_DISABLED'] = not conf.getboolean(
+    app.secret_key = configuration.conf.get('webserver', 'SECRET_KEY')
+    app.config['LOGIN_DISABLED'] = not configuration.conf.getboolean(
         'webserver', 'AUTHENTICATE')
 
     app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -125,18 +127,9 @@ def create_app(config=None, testing=False):
         av(vs.XComView(
             models.XCom, Session, name="XComs", category="Admin"))
 
-        if "dev" in version.version:
-            airflow_doc_site = "https://airflow.readthedocs.io/en/latest"
-        else:
-            airflow_doc_site = 'https://airflow.apache.org/docs/{}'.format(version.version)
-
-        admin.add_link(base.MenuLink(
-            name="Website",
-            url='https://airflow.apache.org',
-            category="Docs"))
         admin.add_link(base.MenuLink(
             category='Docs', name='Documentation',
-            url=airflow_doc_site))
+            url='https://airflow.apache.org/'))
         admin.add_link(
             base.MenuLink(category='Docs',
                           name='GitHub',
@@ -178,34 +171,9 @@ def create_app(config=None, testing=False):
         @app.context_processor
         def jinja_globals():
             return {
-                'hostname': get_hostname() if conf.getboolean(
-                    'webserver', 'EXPOSE_HOSTNAME',
-                    fallback=True) else 'redact',
-                'navbar_color': conf.get(
-                    'webserver', 'NAVBAR_COLOR'),
-                'log_fetch_delay_sec': conf.getint(
-                    'webserver', 'log_fetch_delay_sec', fallback=2),
-                'log_auto_tailing_offset': conf.getint(
-                    'webserver', 'log_auto_tailing_offset', fallback=30),
-                'log_animation_speed': conf.getint(
-                    'webserver', 'log_animation_speed', fallback=1000)
+                'hostname': get_hostname(),
+                'navbar_color': configuration.get('webserver', 'NAVBAR_COLOR'),
             }
-
-        @app.before_request
-        def before_request():
-            _force_log_out_after = conf.getint('webserver', 'FORCE_LOG_OUT_AFTER', fallback=0)
-            if _force_log_out_after > 0:
-                flask.session.permanent = True
-                app.permanent_session_lifetime = datetime.timedelta(minutes=_force_log_out_after)
-                flask.session.modified = True
-                flask.g.user = flask_login.current_user
-
-        @app.after_request
-        def apply_caching(response):
-            _x_frame_enabled = conf.getboolean('webserver', 'X_FRAME_ENABLED', fallback=True)
-            if not _x_frame_enabled:
-                response.headers["X-Frame-Options"] = "DENY"
-            return response
 
         @app.teardown_appcontext
         def shutdown_session(exception=None):
@@ -225,7 +193,7 @@ def root_app(env, resp):
 def cached_app(config=None, testing=False):
     global app
     if not app:
-        base_url = urlparse(conf.get('webserver', 'base_url'))[2]
+        base_url = urlparse(configuration.conf.get('webserver', 'base_url'))[2]
         if not base_url or base_url == '/':
             base_url = ""
 

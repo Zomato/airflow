@@ -77,14 +77,14 @@ class HttpHook(BaseHook):
                 try:
                     session.headers.update(conn.extra_dejson)
                 except TypeError:
-                    self.log.warning('Connection to %s has invalid extra field.', conn.host)
+                    self.log.warn('Connection to %s has invalid extra field.', conn.host)
         if headers:
             session.headers.update(headers)
 
         return session
 
-    def run(self, endpoint, data=None, headers=None, extra_options=None, **request_kwargs):
-        r"""
+    def run(self, endpoint, data=None, headers=None, extra_options=None):
+        """
         Performs the request
 
         :param endpoint: the endpoint to be called i.e. resource/v1/query?
@@ -97,8 +97,6 @@ class HttpHook(BaseHook):
             i.e. {'check_response': False} to avoid checking raising exceptions on non
             2XX or 3XX status codes
         :type extra_options: dict
-        :param  \**request_kwargs: Additional kwargs to pass when creating a request.
-            For example, ``run(json=obj)`` is passed as ``requests.Request(json=obj)``
         """
         extra_options = extra_options or {}
 
@@ -116,21 +114,18 @@ class HttpHook(BaseHook):
             req = requests.Request(self.method,
                                    url,
                                    params=data,
-                                   headers=headers,
-                                   **request_kwargs)
+                                   headers=headers)
         elif self.method == 'HEAD':
             # HEAD doesn't use params
             req = requests.Request(self.method,
                                    url,
-                                   headers=headers,
-                                   **request_kwargs)
+                                   headers=headers)
         else:
             # Others use data
             req = requests.Request(self.method,
                                    url,
                                    data=data,
-                                   headers=headers,
-                                   **request_kwargs)
+                                   headers=headers)
 
         prepped_request = session.prepare_request(req)
         self.log.info("Sending '%s' to url: %s", self.method, url)
@@ -148,7 +143,8 @@ class HttpHook(BaseHook):
             response.raise_for_status()
         except requests.exceptions.HTTPError:
             self.log.error("HTTP error: %s", response.reason)
-            self.log.error(response.text)
+            if self.method not in ['GET', 'HEAD']:
+                self.log.error(response.text)
             raise AirflowException(str(response.status_code) + ":" + response.reason)
 
     def run_and_check(self, session, prepped_request, extra_options):

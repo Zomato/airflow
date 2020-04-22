@@ -16,20 +16,19 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+
+import airflow
 from builtins import range
-
-from datetime import timedelta
-
-from airflow.models import DAG
 from airflow.operators.bash_operator import BashOperator
 from airflow.operators.dummy_operator import DummyOperator
-from airflow.utils.dates import days_ago
+from airflow.models import DAG
+from datetime import timedelta
 
 
 args = {
     'owner': 'airflow',
     'retries': 3,
-    'start_date': days_ago(2)
+    'start_date': airflow.utils.dates.days_ago(2)
 }
 
 dag = DAG(

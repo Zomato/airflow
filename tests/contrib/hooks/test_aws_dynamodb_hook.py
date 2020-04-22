@@ -55,7 +55,7 @@ class TestDynamoDBHook(unittest.TestCase):
             ],
             AttributeDefinitions=[
                 {
-                    'AttributeName': 'id',
+                    'AttributeName': 'name',
                     'AttributeType': 'S'
                 }
             ],

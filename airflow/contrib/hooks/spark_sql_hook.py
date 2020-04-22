@@ -94,7 +94,7 @@ class SparkSqlHook(BaseHook):
         as default.
 
         :param cmd: command to append to the spark-sql command
-        :type cmd: str or list[str]
+        :type cmd: str
         :return: full command to be executed
         """
         connection_cmd = ["spark-sql"]
@@ -128,13 +128,7 @@ class SparkSqlHook(BaseHook):
         if self._yarn_queue:
             connection_cmd += ["--queue", self._yarn_queue]
 
-        if isinstance(cmd, str):
-            connection_cmd += cmd.split()
-        elif isinstance(cmd, list):
-            connection_cmd += cmd
-        else:
-            raise AirflowException("Invalid additional command: {}".format(cmd))
-
+        connection_cmd += cmd
         self.log.debug("Spark-Sql cmd: %s", connection_cmd)
 
         return connection_cmd
@@ -143,10 +137,8 @@ class SparkSqlHook(BaseHook):
         """
         Remote Popen (actually execute the Spark-sql query)
 
-        :param cmd: command to append to the spark-sql command
-        :type cmd: str or list[str]
+        :param cmd: command to remotely execute
         :param kwargs: extra arguments to Popen (see subprocess.Popen)
-        :type kwargs: dict
         """
         spark_sql_cmd = self._prepare_command(cmd)
         self._sp = subprocess.Popen(spark_sql_cmd,

@@ -18,11 +18,9 @@
 # under the License.
 
 import unittest
-from argparse import Namespace
-
 import sqlalchemy
-
 import airflow
+from argparse import Namespace
 from tests.compat import mock, patch
 from tests.test_utils.config import conf_vars
 
@@ -32,6 +30,10 @@ mock_args = Namespace(queues=1, concurrency=1)
 
 
 class TestWorkerPrecheck(unittest.TestCase):
+
+    def setUp(self):
+        airflow.configuration.load_test_config()
+
     @mock.patch('airflow.settings.validate_session')
     def test_error(self, mock_validate_session):
         """

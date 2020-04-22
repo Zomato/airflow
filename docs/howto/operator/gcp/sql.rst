@@ -17,17 +17,12 @@
 
 
 
-Google Cloud SQL Operators
+Google Cloud Sql Operators
 ==========================
 
 .. contents::
   :depth: 1
   :local:
-
-Prerequisite Tasks
-------------------
-
-.. include:: _partials/prerequisite_tasks.rst
 
 .. _howto/operator:CloudSqlInstanceDatabaseCreateOperator:
 
@@ -575,7 +570,7 @@ dynamically as needed by the operator.
 There is a *gcpcloudsql://* connection type that you should use to define what
 kind of connectivity you want the operator to use. The connection is a "meta"
 type of connection. It is not used to make an actual connectivity on its own, but it
-determines whether Cloud SQL Proxy should be started by ``CloudSqlDatabaseHook``
+determines whether Cloud SQL Proxy should be started by `CloudSqlDatabaseHook`
 and what kind of database connection (Postgres or MySQL) should be created
 dynamically to connect to Cloud SQL via public IP address or via the proxy.
 The 'CloudSqlDatabaseHook` uses
@@ -585,7 +580,7 @@ Proxy lifecycle (each task has its own Cloud SQL Proxy)
 When you build connection, you should use connection parameters as described in
 :class:`~airflow.contrib.hooks.gcp_sql_hook.CloudSqlDatabaseHook`. You can see
 examples of connections below for all the possible types of connectivity. Such connection
-can be reused between different tasks (instances of ``CloudSqlQueryOperator``). Each
+can be reused between different tasks (instances of `CloudSqlQueryOperator`). Each
 task will get their own proxy started if needed with their own TCP or UNIX socket.
 
 For parameter definition, take a look at
@@ -599,7 +594,7 @@ used to create tables in an idempotent way.
 Arguments
 """""""""
 
-If you define connection via ``AIRFLOW_CONN_*`` URL defined in an environment
+If you define connection via `AIRFLOW_CONN_*` URL defined in an environment
 variable, make sure the URL components in the URL are URL-encoded.
 See examples below for details.
 
@@ -627,7 +622,7 @@ Using the operator
 """"""""""""""""""
 
 Example operators below are using all connectivity options. Note connection id
-from the operator matches the ``AIRFLOW_CONN_*`` postfix uppercase. This is
+from the operator matches the `AIRFLOW_CONN_*` postfix uppercase. This is
 standard AIRFLOW notation for defining connection via environment variables):
 
 .. exampleinclude:: ../../../../airflow/contrib/example_dags/example_gcp_sql_query.py
@@ -649,12 +644,3 @@ More information
 
 See Google Cloud SQL documentation for `MySQL <https://cloud.google.com/sql/docs/mysql/sql-proxy>`_ and
 `PostgreSQL <https://cloud.google.com/sql/docs/postgres/sql-proxy>`_ related proxies.
-
-Reference
----------
-
-For further information, look at:
-
-* `Google Cloud API - MySQL Documentation <https://cloud.google.com/sql/docs/mysql/admin-api/v1beta4/>`__
-* `Google Cloud API - PostgresSQL Documentation <https://cloud.google.com/sql/docs/postgres/admin-api/v1beta4/>`__
-* `Product Documentation <https://cloud.google.com/sql/docs/>`__

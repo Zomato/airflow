@@ -21,6 +21,7 @@ import unittest
 import requests_mock
 import json
 
+from airflow import configuration
 from airflow.models import Connection
 from airflow.utils import db
 from airflow.contrib.hooks.opsgenie_alert_hook import OpsgenieAlertHook
@@ -66,6 +67,7 @@ class TestOpsgenieAlertHook(unittest.TestCase):
     }
 
     def setUp(self):
+        configuration.load_test_config()
         db.merge_conn(
             Connection(
                 conn_id=self.conn_id,

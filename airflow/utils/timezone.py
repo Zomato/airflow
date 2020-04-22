@@ -52,7 +52,6 @@ def is_naive(value):
 def utcnow():
     """
     Get the current date and time in UTC
-
     :return:
     """
 
@@ -68,7 +67,6 @@ def utcnow():
 def utc_epoch():
     """
     Gets the epoch in the users timezone
-
     :return:
     """
 
@@ -85,7 +83,6 @@ def convert_to_utc(value):
     """
     Returns the datetime with the default timezone added if timezone
     information was not associated
-
     :param value: datetime
     :return: datetime with tzinfo
     """
@@ -105,6 +102,7 @@ def make_aware(value, timezone=None):
     :param value: datetime
     :param timezone: timezone
     :return: localized datetime in settings.TIMEZONE or timezone
+
     """
     if timezone is None:
         timezone = TIMEZONE
@@ -174,7 +172,6 @@ def datetime(*args, **kwargs):
 def parse(string, timezone=None):
     """
     Parse a time string and return an aware datetime
-
     :param string: time string
     """
     return pendulum.parse(string, tz=timezone or TIMEZONE)

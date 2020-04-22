@@ -30,8 +30,6 @@ from airflow.models.baseoperator import BaseOperator, BaseOperatorLink
 from airflow.models.taskinstance import TaskInstance
 from airflow.utils.decorators import apply_defaults
 
-BIGQUERY_JOB_DETAILS_LINK_FMT = 'https://console.cloud.google.com/bigquery?j={job_id}'
-
 
 class BigQueryConsoleLink(BaseOperatorLink):
     """
@@ -42,31 +40,8 @@ class BigQueryConsoleLink(BaseOperatorLink):
     def get_link(self, operator, dttm):
         ti = TaskInstance(task=operator, execution_date=dttm)
         job_id = ti.xcom_pull(task_ids=operator.task_id, key='job_id')
-        return BIGQUERY_JOB_DETAILS_LINK_FMT.format(job_id=job_id) if job_id else ''
-
-
-class BigQueryConsoleIndexableLink(BaseOperatorLink):
-    """
-    Helper class for constructing BigQuery link.
-    """
-
-    def __init__(self, index):
-        super(BigQueryConsoleIndexableLink, self).__init__()
-        self.index = index
-
-    @property
-    def name(self):  # type: () -> str
-        return 'BigQuery Console #{index}'.format(index=self.index + 1)
-
-    def get_link(self, operator, dttm):
-        ti = TaskInstance(task=operator, execution_date=dttm)
-        job_ids = ti.xcom_pull(task_ids=operator.task_id, key='job_id')
-        if not job_ids:
-            return None
-        if len(job_ids) < self.index:
-            return None
-        job_id = job_ids[self.index]
-        return BIGQUERY_JOB_DETAILS_LINK_FMT.format(job_id=job_id)
+        return 'https://console.cloud.google.com/bigquery?j={job_id}'.format(
+            job_id=job_id) if job_id else ''
 
 
 # pylint: disable=too-many-instance-attributes
@@ -168,18 +143,9 @@ class BigQueryOperator(BaseOperator):
     template_ext = ('.sql', )
     ui_color = '#e4f0e8'
 
-    @property
-    def operator_extra_links(self):
-        """
-        Return operator extra links
-        """
-        if isinstance(self.sql, str):
-            return (
-                BigQueryConsoleLink(),
-            )
-        return (
-            BigQueryConsoleIndexableLink(i) for i, _ in enumerate(self.sql)
-        )
+    operator_extra_links = (
+        BigQueryConsoleLink(),
+    )
 
     # pylint: disable=too-many-arguments, too-many-locals
     @apply_defaults
@@ -654,23 +620,14 @@ class BigQueryDeleteDatasetOperator(BaseOperator):
     :type project_id: str
     :param dataset_id: The dataset to be deleted.
     :type dataset_id: str
-    :param delete_contents: (Optional) Whether to force the deletion even if the dataset is not empty.
-        Will delete all tables (if any) in the dataset if set to True.
-        Will raise HttpError 400: "{dataset_id} is still in use" if set to False and dataset is not empty.
-        The default value is False.
-    :type delete_contents: bool
-    :param bigquery_conn_id: The connection ID used to connect to Google Cloud Platform.
-    :type bigquery_conn_id: str
 
     **Example**: ::
 
-        delete_temp_data = BigQueryDeleteDatasetOperator(
-            dataset_id='temp-dataset',
-            project_id='temp-project',
-            delete_contents=True, # Force the deletion of the dataset as well as its tables (if any).
-            bigquery_conn_id='_my_gcp_conn_',
-            task_id='Deletetemp',
-            dag=dag)
+        delete_temp_data = BigQueryDeleteDatasetOperator(dataset_id = 'temp-dataset',
+                                                         project_id = 'temp-project',
+                                                         bigquery_conn_id='_my_gcp_conn_',
+                                                         task_id='Deletetemp',
+                                                         dag=dag)
     """
 
     template_fields = ('dataset_id', 'project_id')
@@ -679,7 +636,6 @@ class BigQueryDeleteDatasetOperator(BaseOperator):
     @apply_defaults
     def __init__(self,
                  dataset_id,
-                 delete_contents=False,
                  project_id=None,
                  bigquery_conn_id='bigquery_default',
                  delegate_to=None,
@@ -687,14 +643,14 @@ class BigQueryDeleteDatasetOperator(BaseOperator):
         self.dataset_id = dataset_id
         self.project_id = project_id
         self.bigquery_conn_id = bigquery_conn_id
-        self.delete_contents = delete_contents
         self.delegate_to = delegate_to
+
+        self.log.info('Dataset id: %s', self.dataset_id)
+        self.log.info('Project id: %s', self.project_id)
 
         super(BigQueryDeleteDatasetOperator, self).__init__(*args, **kwargs)
 
     def execute(self, context):
-        self.log.info('Dataset id: %s Project id: %s', self.dataset_id, self.project_id)
-
         bq_hook = BigQueryHook(bigquery_conn_id=self.bigquery_conn_id,
                                delegate_to=self.delegate_to)
 
@@ -703,8 +659,7 @@ class BigQueryDeleteDatasetOperator(BaseOperator):
 
         cursor.delete_dataset(
             project_id=self.project_id,
-            dataset_id=self.dataset_id,
-            delete_contents=self.delete_contents
+            dataset_id=self.dataset_id
         )
 
 
@@ -753,11 +708,12 @@ class BigQueryCreateEmptyDatasetOperator(BaseOperator):
         self.dataset_reference = dataset_reference if dataset_reference else {}
         self.delegate_to = delegate_to
 
+        self.log.info('Dataset id: %s', self.dataset_id)
+        self.log.info('Project id: %s', self.project_id)
+
         super(BigQueryCreateEmptyDatasetOperator, self).__init__(*args, **kwargs)
 
     def execute(self, context):
-        self.log.info('Dataset id: %s Project id: %s', self.dataset_id, self.project_id)
-
         bq_hook = BigQueryHook(bigquery_conn_id=self.bigquery_conn_id,
                                delegate_to=self.delegate_to)
 
@@ -768,155 +724,3 @@ class BigQueryCreateEmptyDatasetOperator(BaseOperator):
             project_id=self.project_id,
             dataset_id=self.dataset_id,
             dataset_reference=self.dataset_reference)
-
-
-class BigQueryGetDatasetOperator(BaseOperator):
-    """
-    This operator is used to return the dataset specified by dataset_id.
-
-    :param dataset_id: The id of dataset. Don't need to provide,
-        if datasetId in dataset_reference.
-    :type dataset_id: str
-    :param project_id: The name of the project where we want to create the dataset.
-        Don't need to provide, if projectId in dataset_reference.
-    :type project_id: str
-    :param gcp_conn_id: (Optional) The connection ID used to connect to Google Cloud Platform.
-    :type gcp_conn_id: str
-    :rtype: dataset
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-    """
-
-    template_fields = ('dataset_id', 'project_id')
-    ui_color = '#f0eee4'
-
-    @apply_defaults
-    def __init__(self,
-                 dataset_id,
-                 project_id=None,
-                 gcp_conn_id='google_cloud_default',
-                 delegate_to=None,
-                 *args, **kwargs):
-        self.dataset_id = dataset_id
-        self.project_id = project_id
-        self.gcp_conn_id = gcp_conn_id
-        self.delegate_to = delegate_to
-        super(BigQueryGetDatasetOperator, self).__init__(*args, **kwargs)
-
-    def execute(self, context):
-        bq_hook = BigQueryHook(bigquery_conn_id=self.gcp_conn_id,
-                               delegate_to=self.delegate_to)
-        conn = bq_hook.get_conn()
-        cursor = conn.cursor()
-
-        self.log.info('Start getting dataset: %s:%s', self.project_id, self.dataset_id)
-
-        return cursor.get_dataset(
-            dataset_id=self.dataset_id,
-            project_id=self.project_id)
-
-
-class BigQueryPatchDatasetOperator(BaseOperator):
-    """
-    This operator is used to patch dataset for your Project in BigQuery.
-    It only replaces fields that are provided in the submitted dataset resource.
-
-    :param dataset_id: The id of dataset. Don't need to provide,
-        if datasetId in dataset_reference.
-    :type dataset_id: str
-    :param dataset_resource: Dataset resource that will be provided with request body.
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-    :type dataset_resource: dict
-    :param project_id: The name of the project where we want to create the dataset.
-        Don't need to provide, if projectId in dataset_reference.
-    :type project_id: str
-    :param gcp_conn_id: (Optional) The connection ID used to connect to Google Cloud Platform.
-    :type gcp_conn_id: str
-    :rtype: dataset
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-    """
-
-    template_fields = ('dataset_id', 'project_id')
-    ui_color = '#f0eee4'
-
-    @apply_defaults
-    def __init__(self,
-                 dataset_id,
-                 dataset_resource,
-                 project_id=None,
-                 gcp_conn_id='google_cloud_default',
-                 delegate_to=None,
-                 *args, **kwargs):
-        self.dataset_id = dataset_id
-        self.project_id = project_id
-        self.gcp_conn_id = gcp_conn_id
-        self.dataset_resource = dataset_resource
-        self.delegate_to = delegate_to
-        super(BigQueryPatchDatasetOperator, self).__init__(*args, **kwargs)
-
-    def execute(self, context):
-        bq_hook = BigQueryHook(bigquery_conn_id=self.gcp_conn_id,
-                               delegate_to=self.delegate_to)
-
-        conn = bq_hook.get_conn()
-        cursor = conn.cursor()
-
-        self.log.info('Start patching dataset: %s:%s', self.project_id, self.dataset_id)
-
-        return cursor.patch_dataset(
-            dataset_id=self.dataset_id,
-            dataset_resource=self.dataset_resource,
-            project_id=self.project_id)
-
-
-class BigQueryUpdateDatasetOperator(BaseOperator):
-    """
-    This operator is used to update dataset for your Project in BigQuery.
-    The update method replaces the entire dataset resource, whereas the patch
-    method only replaces fields that are provided in the submitted dataset resource.
-
-    :param dataset_id: The id of dataset. Don't need to provide,
-        if datasetId in dataset_reference.
-    :type dataset_id: str
-    :param dataset_resource: Dataset resource that will be provided with request body.
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-    :type dataset_resource: dict
-    :param project_id: The name of the project where we want to create the dataset.
-        Don't need to provide, if projectId in dataset_reference.
-    :type project_id: str
-    :param gcp_conn_id: (Optional) The connection ID used to connect to Google Cloud Platform.
-    :type gcp_conn_id: str
-    :rtype: dataset
-        https://cloud.google.com/bigquery/docs/reference/rest/v2/datasets#resource
-    """
-
-    template_fields = ('dataset_id', 'project_id')
-    ui_color = '#f0eee4'
-
-    @apply_defaults
-    def __init__(self,
-                 dataset_id,
-                 dataset_resource,
-                 project_id=None,
-                 gcp_conn_id='google_cloud_default',
-                 delegate_to=None,
-                 *args, **kwargs):
-        self.dataset_id = dataset_id
-        self.project_id = project_id
-        self.gcp_conn_id = gcp_conn_id
-        self.dataset_resource = dataset_resource
-        self.delegate_to = delegate_to
-        super(BigQueryUpdateDatasetOperator, self).__init__(*args, **kwargs)
-
-    def execute(self, context):
-        bq_hook = BigQueryHook(bigquery_conn_id=self.gcp_conn_id,
-                               delegate_to=self.delegate_to)
-
-        conn = bq_hook.get_conn()
-        cursor = conn.cursor()
-
-        self.log.info('Start updating dataset: %s:%s', self.project_id, self.dataset_id)
-
-        return cursor.update_dataset(
-            dataset_id=self.dataset_id,
-            dataset_resource=self.dataset_resource,
-            project_id=self.project_id)

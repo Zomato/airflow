@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+#
 # flake8: noqa
 # Disable Flake8 because of all the sphinx imports
 #
@@ -19,12 +20,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Remove Transform Mark for Sphinx"""
 import re
 
 from docutils import nodes
-# noinspection PyUnresolvedReferences
-from pygments.lexers import guess_lexer, Python3Lexer, PythonLexer  # pylint: disable=no-name-in-module
+from pygments.lexers import guess_lexer, Python3Lexer, PythonLexer
 from sphinx.transforms import SphinxTransform
 from sphinx.transforms.post_transforms.code import TrimDoctestFlagsTransform
 
@@ -52,7 +51,7 @@ class TrimDocMarkerFlagsTransform(SphinxTransform):
 
     @staticmethod
     def is_pycode(node):
-        """Checks if the node is literal block of python"""
+        # type: (nodes.literal_block) -> bool
         if node.rawsource != node.astext():
             return False  # skip parsed-literal node
 
@@ -60,18 +59,16 @@ class TrimDocMarkerFlagsTransform(SphinxTransform):
         if language in ("py", "py3", "python", "python3", "default"):
             return True
         elif language == "guess":
-            # noinspection PyBroadException
             try:
                 lexer = guess_lexer(node.rawsource)
-                return isinstance(lexer, (PythonLexer, Python3Lexer))
-            except Exception:  # pylint: disable=broad-except
+                return isinstance(lexer, PythonLexer) or isinstance(lexer, Python3Lexer)
+            except Exception:
                 pass
 
         return False
 
 
 def setup(app):
-    """Sets the transform up"""
     app.add_post_transform(TrimDocMarkerFlagsTransform)
 
     return {"version": "builtin", "parallel_read_safe": False, "parallel_write_safe": False}

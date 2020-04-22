@@ -17,9 +17,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""
-This module contains AWS Athena hook
-"""
 from time import sleep
 from airflow.contrib.hooks.aws_hook import AwsHook
 
@@ -53,8 +50,7 @@ class AWSAthenaHook(AwsHook):
             self.conn = self.get_client_type('athena')
         return self.conn
 
-    def run_query(self, query, query_context, result_configuration, client_request_token=None,
-                  workgroup='primary'):
+    def run_query(self, query, query_context, result_configuration, client_request_token=None):
         """
         Run Presto query on athena with provided config and return submitted query_execution_id
 
@@ -66,15 +62,12 @@ class AWSAthenaHook(AwsHook):
         :type result_configuration: dict
         :param client_request_token: Unique token created by user to avoid multiple executions of same query
         :type client_request_token: str
-        :param workgroup: Athena workgroup name, when not specified, will be 'primary'
-        :type workgroup: str
         :return: str
         """
         response = self.get_conn().start_query_execution(QueryString=query,
                                                          ClientRequestToken=client_request_token,
                                                          QueryExecutionContext=query_context,
-                                                         ResultConfiguration=result_configuration,
-                                                         WorkGroup=workgroup)
+                                                         ResultConfiguration=result_configuration)
         query_execution_id = response['QueryExecutionId']
         return query_execution_id
 
@@ -90,17 +83,14 @@ class AWSAthenaHook(AwsHook):
         state = None
         try:
             state = response['QueryExecution']['Status']['State']
-        except Exception as ex:  # pylint: disable=broad-except
+        except Exception as ex:
             self.log.error('Exception while getting query state', ex)
         finally:
-            # The error is being absorbed here and is being handled by the caller.
-            # The error is being absorbed to implement retries.
-            return state  # pylint: disable=lost-exception
+            return state
 
     def get_state_change_reason(self, query_execution_id):
         """
         Fetch the reason for a state change (e.g. error message). Returns None or reason string.
-
         :param query_execution_id: Id of submitted athena query
         :type query_execution_id: str
         :return: str
@@ -109,12 +99,10 @@ class AWSAthenaHook(AwsHook):
         reason = None
         try:
             reason = response['QueryExecution']['Status']['StateChangeReason']
-        except Exception as ex:  # pylint: disable=broad-except
+        except Exception as ex:
             self.log.error('Exception while getting query state change reason', ex)
         finally:
-            # The error is being absorbed here and is being handled by the caller.
-            # The error is being absorbed to implement retries.
-            return reason  # pylint: disable=lost-exception
+            return reason
 
     def get_query_results(self, query_execution_id):
         """

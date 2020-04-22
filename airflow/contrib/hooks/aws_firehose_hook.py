@@ -16,16 +16,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""
-This module contains AWS Firehose hook
-"""
 from airflow.contrib.hooks.aws_hook import AwsHook
 
 
 class AwsFirehoseHook(AwsHook):
     """
     Interact with AWS Kinesis Firehose.
-
     :param delivery_stream: Name of the delivery stream
     :type delivery_stream: str
     :param region_name: AWS region name (example: us-east-1)
@@ -35,7 +31,6 @@ class AwsFirehoseHook(AwsHook):
     def __init__(self, delivery_stream, region_name=None, *args, **kwargs):
         self.delivery_stream = delivery_stream
         self.region_name = region_name
-        self.conn = None
         super(AwsFirehoseHook, self).__init__(*args, **kwargs)
 
     def get_conn(self):

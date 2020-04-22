@@ -1,10 +1,8 @@
 # Note: these patterns are applied to single files or directories, not full paths
 # coverage/* will ignore any coverage dir, but airflow/www/static/coverage/* will match nothing
 
-.github/*
 .gitignore
 .gitattributes
-.airflow_db_initialised
 .airflowignore
 .coverage
 .coveragerc
@@ -13,7 +11,6 @@
 .eslintignore
 .flake8
 .rat-excludes
-requirements
 requirements.txt
 .*log
 .travis.yml
@@ -31,21 +28,12 @@ metastore_db
 CHANGELOG.txt
 .*zip
 .*lock
-unittests.cfg
-logs
-.bash_aliases
-venv
-files
-airflow.iml
-
 # Generated doc files
 .*html
 _build/*
 _static/*
-_images/*
 .buildinfo
 searchindex.js
-_api/*
 
 # Apache Rat does not detect BSD-2 clause properly
 # it is compatible according to http://www.apache.org/legal/resolved.html#category-a
@@ -67,18 +55,10 @@ coverage/*
 git_version
 flake8_diff.sh
 coverage.xml
-_sources/*
 
 rat-results.txt
 apache-airflow-.*\+source.tar.gz.*
 apache-airflow-.*\+bin.tar.gz.*
-PULL_REQUEST_TEMPLATE.md
 
 # vendored modules
 _vendor/*
-
-# Locally mounted files
-.*egg-info/*
-.bash_history
-.bash_aliases
-.inputrc

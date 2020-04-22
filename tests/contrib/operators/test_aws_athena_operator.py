@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
+#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
 # regarding copyright ownership.  The ASF licenses this file
 # to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
+# 'License'); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing,
 # software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 #
 
 import unittest
@@ -25,6 +25,7 @@ from airflow.contrib.hooks.aws_athena_hook import AWSAthenaHook
 from airflow.models import DAG, TaskInstance
 from airflow.utils import timezone
 from airflow.utils.timezone import datetime
+from airflow import configuration
 from tests.compat import mock
 
 TEST_DAG_ID = 'unit_tests'
@@ -36,8 +37,7 @@ MOCK_DATA = {
     'query': 'SELECT * FROM TEST_TABLE',
     'database': 'TEST_DATABASE',
     'outputLocation': 's3://test_s3_bucket/',
-    'client_request_token': 'eac427d0-1c6d-4dfb-96aa-2835d3ac6595',
-    'workgroup': 'primary'
+    'client_request_token': 'eac427d0-1c6d-4dfb-96aa-2835d3ac6595'
 }
 
 query_context = {
@@ -48,11 +48,11 @@ result_configuration = {
 }
 
 
-# noinspection PyUnusedLocal
-# pylint: disable=unused-argument
 class TestAWSAthenaOperator(unittest.TestCase):
 
     def setUp(self):
+        configuration.load_test_config()
+
         args = {
             'owner': 'airflow',
             'start_date': DEFAULT_DATE,
@@ -81,7 +81,7 @@ class TestAWSAthenaOperator(unittest.TestCase):
     def test_hook_run_small_success_query(self, mock_conn, mock_run_query, mock_check_query_status):
         self.athena.execute(None)
         mock_run_query.assert_called_once_with(MOCK_DATA['query'], query_context, result_configuration,
-                                               MOCK_DATA['client_request_token'], MOCK_DATA['workgroup'])
+                                               MOCK_DATA['client_request_token'])
         self.assertEqual(mock_check_query_status.call_count, 1)
 
     @mock.patch.object(AWSAthenaHook, 'check_query_status', side_effect=("RUNNING", "RUNNING", "SUCCESS",))
@@ -90,7 +90,7 @@ class TestAWSAthenaOperator(unittest.TestCase):
     def test_hook_run_big_success_query(self, mock_conn, mock_run_query, mock_check_query_status):
         self.athena.execute(None)
         mock_run_query.assert_called_once_with(MOCK_DATA['query'], query_context, result_configuration,
-                                               MOCK_DATA['client_request_token'], MOCK_DATA['workgroup'])
+                                               MOCK_DATA['client_request_token'])
         self.assertEqual(mock_check_query_status.call_count, 3)
 
     @mock.patch.object(AWSAthenaHook, 'check_query_status', side_effect=(None, None,))
@@ -100,7 +100,7 @@ class TestAWSAthenaOperator(unittest.TestCase):
         with self.assertRaises(Exception):
             self.athena.execute(None)
         mock_run_query.assert_called_once_with(MOCK_DATA['query'], query_context, result_configuration,
-                                               MOCK_DATA['client_request_token'], MOCK_DATA['workgroup'])
+                                               MOCK_DATA['client_request_token'])
         self.assertEqual(mock_check_query_status.call_count, 3)
 
     @mock.patch.object(AWSAthenaHook, 'get_state_change_reason')
@@ -112,7 +112,7 @@ class TestAWSAthenaOperator(unittest.TestCase):
         with self.assertRaises(Exception):
             self.athena.execute(None)
         mock_run_query.assert_called_once_with(MOCK_DATA['query'], query_context, result_configuration,
-                                               MOCK_DATA['client_request_token'], MOCK_DATA['workgroup'])
+                                               MOCK_DATA['client_request_token'])
         self.assertEqual(mock_check_query_status.call_count, 2)
         self.assertEqual(mock_get_state_change_reason.call_count, 1)
 
@@ -123,7 +123,7 @@ class TestAWSAthenaOperator(unittest.TestCase):
         with self.assertRaises(Exception):
             self.athena.execute(None)
         mock_run_query.assert_called_once_with(MOCK_DATA['query'], query_context, result_configuration,
-                                               MOCK_DATA['client_request_token'], MOCK_DATA['workgroup'])
+                                               MOCK_DATA['client_request_token'])
         self.assertEqual(mock_check_query_status.call_count, 3)
 
     @mock.patch.object(AWSAthenaHook, 'check_query_status', side_effect=("RUNNING", "RUNNING", "RUNNING",))
@@ -133,7 +133,7 @@ class TestAWSAthenaOperator(unittest.TestCase):
         with self.assertRaises(Exception):
             self.athena.execute(None)
         mock_run_query.assert_called_once_with(MOCK_DATA['query'], query_context, result_configuration,
-                                               MOCK_DATA['client_request_token'], MOCK_DATA['workgroup'])
+                                               MOCK_DATA['client_request_token'])
         self.assertEqual(mock_check_query_status.call_count, 3)
 
     @mock.patch.object(AWSAthenaHook, 'check_query_status', side_effect=("SUCCESS",))
@@ -145,7 +145,6 @@ class TestAWSAthenaOperator(unittest.TestCase):
 
         self.assertEqual(ti.xcom_pull(task_ids='test_aws_athena_operator'),
                          ATHENA_QUERY_ID)
-# pylint: enable=unused-argument
 
 
 if __name__ == '__main__':

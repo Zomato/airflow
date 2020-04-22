@@ -16,18 +16,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""
-This dag tests performance of simple bash commands executed with Airflow.
-"""
+import airflow
+from airflow.operators.bash_operator import BashOperator
+from airflow.models import DAG
 from datetime import timedelta
 
-from airflow.models import DAG
-from airflow.operators.bash_operator import BashOperator
-from airflow.utils.dates import days_ago
-
 args = {
-    'owner': 'Airflow',
-    'start_date': days_ago(3),
+    'owner': 'airflow',
+    'start_date': airflow.utils.dates.days_ago(3),
 }
 
 dag = DAG(

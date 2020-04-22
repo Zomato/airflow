@@ -20,6 +20,7 @@
 import unittest
 from mock import MagicMock, patch
 
+from airflow import configuration
 from airflow.contrib.operators.emr_terminate_job_flow_operator import EmrTerminateJobFlowOperator
 
 TERMINATE_SUCCESS_RETURN = {
@@ -31,6 +32,8 @@ TERMINATE_SUCCESS_RETURN = {
 
 class TestEmrTerminateJobFlowOperator(unittest.TestCase):
     def setUp(self):
+        configuration.load_test_config()
+
         # Mock out the emr_client (moto has incorrect response)
         mock_emr_client = MagicMock()
         mock_emr_client.terminate_job_flows.return_value = TERMINATE_SUCCESS_RETURN

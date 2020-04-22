@@ -277,7 +277,7 @@ class FTPHook(BaseHook):
         Returns a datetime object representing the last time the file was modified
 
         :param path: remote file path
-        :type path: str
+        :type path: string
         """
         conn = self.get_conn()
         ftp_mdtm = conn.sendcmd('MDTM ' + path)
@@ -293,7 +293,7 @@ class FTPHook(BaseHook):
         Returns the size of a file (in bytes)
 
         :param path: remote file path
-        :type path: str
+        :type path: string
         """
         conn = self.get_conn()
         return conn.size(path)

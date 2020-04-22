@@ -21,8 +21,7 @@ import datetime
 import os
 import unittest
 
-from airflow import settings
-from airflow.configuration import conf
+from airflow import settings, configuration
 from airflow.models import DAG, TaskInstance as TI, clear_task_instances, XCom
 from airflow.operators.dummy_operator import DummyOperator
 from airflow.utils import timezone
@@ -234,13 +233,15 @@ class ClearTasksTest(unittest.TestCase):
         self.assertEqual(ti2.max_tries, 1)
 
     def test_xcom_disable_pickle_type(self):
+        configuration.load_test_config()
+
         json_obj = {"key": "value"}
         execution_date = timezone.utcnow()
         key = "xcom_test1"
         dag_id = "test_dag1"
         task_id = "test_task1"
 
-        conf.set("core", "enable_xcom_pickling", "False")
+        configuration.set("core", "enable_xcom_pickling", "False")
 
         XCom.set(key=key,
                  value=json_obj,
@@ -270,7 +271,7 @@ class ClearTasksTest(unittest.TestCase):
         dag_id = "test_dag2"
         task_id = "test_task2"
 
-        conf.set("core", "enable_xcom_pickling", "True")
+        configuration.set("core", "enable_xcom_pickling", "True")
 
         XCom.set(key=key,
                  value=json_obj,
@@ -298,7 +299,7 @@ class ClearTasksTest(unittest.TestCase):
             def __reduce__(self):
                 return os.system, ("ls -alt",)
 
-        conf.set("core", "xcom_enable_pickling", "False")
+        configuration.set("core", "xcom_enable_pickling", "False")
 
         self.assertRaises(TypeError, XCom.set,
                           key="xcom_test3",
@@ -316,7 +317,7 @@ class ClearTasksTest(unittest.TestCase):
         dag_id2 = "test_dag5"
         task_id2 = "test_task5"
 
-        conf.set("core", "xcom_enable_pickling", "True")
+        configuration.set("core", "xcom_enable_pickling", "True")
 
         XCom.set(key=key,
                  value=json_obj,

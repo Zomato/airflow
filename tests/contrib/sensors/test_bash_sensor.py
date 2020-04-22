@@ -22,13 +22,14 @@ import unittest
 
 import datetime
 
-from airflow import DAG
+from airflow import DAG, configuration
 from airflow.contrib.sensors.bash_sensor import BashSensor
 from airflow.exceptions import AirflowSensorTimeout
 
 
 class TestBashSensor(unittest.TestCase):
     def setUp(self):
+        configuration.load_test_config()
         args = {
             'owner': 'airflow',
             'start_date': datetime.datetime(2017, 1, 1)

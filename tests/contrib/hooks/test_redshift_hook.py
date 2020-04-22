@@ -21,6 +21,7 @@
 import unittest
 import boto3
 
+from airflow import configuration
 from airflow.contrib.hooks.redshift_hook import RedshiftHook
 from airflow.contrib.hooks.aws_hook import AwsHook
 
@@ -31,6 +32,9 @@ except ImportError:
 
 
 class TestRedshiftHook(unittest.TestCase):
+    def setUp(self):
+        configuration.load_test_config()
+
     @staticmethod
     def _create_clusters():
         client = boto3.client('redshift', region_name='us-east-1')

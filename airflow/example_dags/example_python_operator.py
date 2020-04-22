@@ -23,21 +23,19 @@ import time
 from builtins import range
 from pprint import pprint
 
-from airflow.utils.dates import days_ago
-
+import airflow
 from airflow.models import DAG
 from airflow.operators.python_operator import PythonOperator
 
 args = {
-    'owner': 'Airflow',
-    'start_date': days_ago(2),
+    'owner': 'airflow',
+    'start_date': airflow.utils.dates.days_ago(2),
 }
 
 dag = DAG(
     dag_id='example_python_operator',
     default_args=args,
     schedule_interval=None,
-    tags=['example']
 )
 
 

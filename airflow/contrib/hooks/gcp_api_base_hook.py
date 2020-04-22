@@ -19,78 +19,26 @@
 #
 import json
 import functools
-import logging
-import os
-import tempfile
+
 import httplib2
-
 import google.auth
-from google.auth.environment_vars import CREDENTIALS
-
 import google_auth_httplib2
 import google.oauth2.service_account
-from google.api_core.exceptions import GoogleAPICallError, AlreadyExists, RetryError, Forbidden, \
-    ResourceExhausted
-from googleapiclient.errors import HttpError
-import tenacity
-from googleapiclient.http import set_user_agent
+import os
+import tempfile
 
-from airflow import LoggingMixin, version
+from google.api_core.exceptions import GoogleAPICallError, AlreadyExists, RetryError
+from googleapiclient.errors import HttpError
+
 from airflow.exceptions import AirflowException
 from airflow.hooks.base_hook import BaseHook
 
-logger = LoggingMixin().log
 
 _DEFAULT_SCOPES = ('https://www.googleapis.com/auth/cloud-platform',)
-
-
-# Constants used by the mechanism of repeating requests in reaction to exceeding the temporary quota.
-INVALID_KEYS = [
-    'DefaultRequestsPerMinutePerProject',
-    'DefaultRequestsPerMinutePerUser',
-    'RequestsPerMinutePerProject',
-    "Resource has been exhausted (e.g. check quota).",
-]
-INVALID_REASONS = [
-    'userRateLimitExceeded',
-]
-
-
-def is_soft_quota_exception(exception):
-    """
-    API for Google services does not have a standardized way to report quota violation errors.
-
-    The function has been adapted by trial and error to the following services:
-
-    * Google Translate
-    * Google Vision
-    * Google Text-to-Speech
-    * Google Speech-to-Text
-    * Google Natural Language
-    * Google Video Intelligence
-    """
-    if isinstance(exception, Forbidden):
-        return any(
-            reason in error["reason"]
-            for reason in INVALID_REASONS
-            for error in exception.errors
-        )
-
-    if isinstance(exception, ResourceExhausted):
-        return any(
-            key in error.details()
-            for key in INVALID_KEYS
-            for error in exception.errors
-        )
-
-    return False
-
-
-class retry_if_temporary_quota(tenacity.retry_if_exception):  # pylint: disable=invalid-name
-    """Retries if there was an exception for exceeding the temporary quote limit."""
-
-    def __init__(self):
-        super(retry_if_temporary_quota, self).__init__(is_soft_quota_exception)
+# The name of the environment variable that Google Authentication library uses
+# to get service account key location. Read more:
+# https://cloud.google.com/docs/authentication/getting-started#setting_the_environment_variable
+_G_APP_CRED_ENV_VAR = "GOOGLE_APPLICATION_CREDENTIALS"
 
 
 class GoogleCloudBaseHook(BaseHook):
@@ -192,7 +140,6 @@ class GoogleCloudBaseHook(BaseHook):
         """
         credentials = self._get_credentials()
         http = httplib2.Http()
-        http = set_user_agent(http, "airflow/" + version.version)
         authed_http = google_auth_httplib2.AuthorizedHttp(
             credentials, http=http)
         return authed_http
@@ -223,25 +170,6 @@ class GoogleCloudBaseHook(BaseHook):
         :rtype: int
         """
         return self._get_field('num_retries') or 5
-
-    @staticmethod
-    def quota_retry(*args, **kwargs):
-        """
-        Function decorator that provides a mechanism to repeat requests in response to exceeding a temporary
-        quote limit.
-        """
-        def decorator(fun):
-            default_kwargs = {
-                'wait': tenacity.wait_exponential(multiplier=1, max=100),
-                'retry': retry_if_temporary_quota(),
-                'before': tenacity.before_log(logger, logging.DEBUG),
-                'after': tenacity.after_log(logger, logging.DEBUG),
-            }
-            default_kwargs.update(**kwargs)
-            return tenacity.retry(
-                *args, **default_kwargs
-            )(fun)
-        return decorator
 
     @staticmethod
     def catch_http_exception(func):
@@ -326,23 +254,15 @@ class GoogleCloudBaseHook(BaseHook):
                 with tempfile.NamedTemporaryFile(mode='w+t') as conf_file:
                     key_path = self._get_field('key_path', False)
                     keyfile_dict = self._get_field('keyfile_dict', False)
-                    current_env_state = os.environ.get(CREDENTIALS)
-                    try:
-                        if key_path:
-                            if key_path.endswith('.p12'):
-                                raise AirflowException(
-                                    'Legacy P12 key file are not supported, use a JSON key file.'
-                                )
-                            os.environ[CREDENTIALS] = key_path
-                        elif keyfile_dict:
-                            conf_file.write(keyfile_dict)
-                            conf_file.flush()
-                            os.environ[CREDENTIALS] = conf_file.name
-                        return func(self, *args, **kwargs)
-                    finally:
-                        if current_env_state is None:
-                            if CREDENTIALS in os.environ:
-                                del os.environ[CREDENTIALS]
-                        else:
-                            os.environ[CREDENTIALS] = current_env_state
+                    if key_path:
+                        if key_path.endswith('.p12'):
+                            raise AirflowException(
+                                'Legacy P12 key file are not supported, '
+                                'use a JSON key file.')
+                        os.environ[_G_APP_CRED_ENV_VAR] = key_path
+                    elif keyfile_dict:
+                        conf_file.write(keyfile_dict)
+                        conf_file.flush()
+                        os.environ[_G_APP_CRED_ENV_VAR] = conf_file.name
+                    return func(self, *args, **kwargs)
             return wrapper

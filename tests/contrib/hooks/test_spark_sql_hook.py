@@ -24,6 +24,7 @@ from itertools import dropwhile
 
 from mock import patch, call
 
+from airflow import configuration
 from airflow.models import Connection
 from airflow.utils import db
 from airflow.contrib.hooks.spark_sql_hook import SparkSqlHook
@@ -51,6 +52,7 @@ class TestSparkSqlHook(unittest.TestCase):
 
     def setUp(self):
 
+        configuration.load_test_config()
         db.merge_conn(
             Connection(
                 conn_id='spark_default', conn_type='spark',
@@ -109,48 +111,6 @@ class TestSparkSqlHook(unittest.TestCase):
             mock_popen.mock_calls[0],
             call(['spark-sql', '-e', 'SELECT 1', '--master', 'yarn', '--name', 'default-name', '--verbose',
                   '--queue', 'default'], stderr=-2, stdout=-1)
-        )
-
-    @patch('airflow.contrib.hooks.spark_sql_hook.subprocess.Popen')
-    def test_spark_process_runcmd_with_str(self, mock_popen):
-        # Given
-        mock_popen.return_value.stdout = six.StringIO('Spark-sql communicates using stdout')
-        mock_popen.return_value.stderr = six.StringIO('stderr')
-        mock_popen.return_value.wait.return_value = 0
-
-        # When
-        hook = SparkSqlHook(
-            conn_id='spark_default',
-            sql='SELECT 1'
-        )
-        hook.run_query('--deploy-mode cluster')
-
-        # Then
-        self.assertEqual(
-            mock_popen.mock_calls[0],
-            call(['spark-sql', '-e', 'SELECT 1', '--master', 'yarn', '--name', 'default-name', '--verbose',
-                  '--queue', 'default', '--deploy-mode', 'cluster'], stderr=-2, stdout=-1)
-        )
-
-    @patch('airflow.contrib.hooks.spark_sql_hook.subprocess.Popen')
-    def test_spark_process_runcmd_with_list(self, mock_popen):
-        # Given
-        mock_popen.return_value.stdout = six.StringIO('Spark-sql communicates using stdout')
-        mock_popen.return_value.stderr = six.StringIO('stderr')
-        mock_popen.return_value.wait.return_value = 0
-
-        # When
-        hook = SparkSqlHook(
-            conn_id='spark_default',
-            sql='SELECT 1'
-        )
-        hook.run_query(['--deploy-mode', 'cluster'])
-
-        # Then
-        self.assertEqual(
-            mock_popen.mock_calls[0],
-            call(['spark-sql', '-e', 'SELECT 1', '--master', 'yarn', '--name', 'default-name', '--verbose',
-                  '--queue', 'default', '--deploy-mode', 'cluster'], stderr=-2, stdout=-1)
         )
 
 
